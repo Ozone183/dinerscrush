@@ -1,0 +1,746 @@
+{
+  "restaurants": [
+    {
+      "name": "Urban Kitchen Restaurant",
+      "website": "https://urbankitchenjoliet.com/",
+      "location": "2424 Plainfield Rd, Crest Hill, IL 60403",
+      "phone": "(815) 782-6417",
+      "menus": [
+        {
+          "menu_name": "Regular Menu",
+          "source_type": "image_ocr",
+          "sections": [
+            {
+              "name": "Starters",
+              "items": [
+                {
+                  "name": "Nachos",
+                  "price": "$10.50",
+                  "description": "Crispy corn tortilla chips, cheese, seasoned pinto beans, jalapeños, fresh pico de gallo, and sour cream. Add grilled chicken or steak $3.50."
+                },
+                {
+                  "name": "Guacamole & Chips",
+                  "price": "$9.00",
+                  "description": "Crispy corn tortillas, house made guacamole, house made salsa."
+                },
+                {
+                  "name": "Cauliflower Bites",
+                  "price": "$9.00",
+                  "description": "Tossed in sweet chili sauce and served with house made ranch."
+                },
+                {
+                  "name": "Wings (6)",
+                  "price": "$10.00",
+                  "description": "Choose from Buffalo, BBQ, or Sweet Chili sauce. Served with celery and house made ranch or blue cheese. Add onion rings $4 | Add french fries $3."
+                },
+                {
+                  "name": "Mozzarella Sticks",
+                  "price": "$9.00",
+                  "description": "8 fried sticks served with marinara sauce."
+                }
+              ]
+            },
+            {
+              "name": "Salads",
+              "items": [
+                {
+                  "name": "Cobb Salad",
+                  "price": "$13.99",
+                  "description": "Grilled chicken, chopped romaine, avocado, hard-boiled egg, grape tomatoes, applewood smoked bacon, blue cheese crumbles, tossed in house made cider vinaigrette."
+                },
+                {
+                  "name": "Caesar Salad",
+                  "price": "$12.50",
+                  "description": "Grilled chicken, chopped romaine, croutons, parmesan cheese, tossed with caesar dressing."
+                },
+                {
+                  "name": "Market Salad",
+                  "price": "$13.99",
+                  "description": "Grilled chicken, spinach, baby arugula, quinoa, avocado, beets, grapes, feta cheese, candied pecans, tossed in honey citrus vinaigrette."
+                },
+                {
+                  "name": "Mediterranean Salad",
+                  "price": "$13.99",
+                  "description": "Grilled chicken, baby arugula, cucumbers, grape tomatoes, bell peppers, red onions, feta cheese, croutons, tossed in lemon parsley vinaigrette."
+                },
+                {
+                  "name": "Apple Pecan Salad",
+                  "price": "$13.50",
+                  "description": "Grilled chicken, spinach, apples, candied pecans, blue cheese, dried cherries, tossed in balsamic fig vinaigrette."
+                }
+              ]
+            },
+            {
+              "name": "Burgers & More",
+              "items": [
+                {
+                  "name": "Cheeseburger",
+                  "price": "$13.99",
+                  "description": "American cheese, tomato, lettuce, mayo, onions, house made pickles, brioche bun. Add bacon $1.00 | Fried egg $0.50."
+                },
+                {
+                  "name": "Urban Style Burger",
+                  "price": "$14.99",
+                  "description": "BBQ sauce, bacon, onion rings, lettuce, tomato, American cheese, fried egg, and mayo."
+                },
+                {
+                  "name": "Buffalo Chicken",
+                  "price": "$13.50",
+                  "description": "Lettuce, tomato, cheese, onion, house made pickles, and your choice of buttermilk fried chicken or grilled chicken."
+                },
+                {
+                  "name": "French Dip Sandwich",
+                  "price": "$13.99",
+                  "description": "Thin slices of ribeye, muenster cheese, au jus and house made bread. Add giardiniera peppers $0.50."
+                },
+                {
+                  "name": "Chicken Club",
+                  "price": "$13.99",
+                  "description": "Grilled chicken, applewood smoked bacon, avocado, mayo, lettuce, tomato, muenster cheese, house made bread."
+                },
+                {
+                  "name": "Monterrey Chicken",
+                  "price": "$13.50",
+                  "description": "Grilled chicken, coleslaw, chipotle mayo, applewood smoked bacon, muenster cheese, house made bread."
+                },
+                {
+                  "name": "Cuban Sandwich",
+                  "price": "$13.99",
+                  "description": "Smoked pork, ham, house made pickles, Swiss cheese, yellow mustard, and house made bread."
+                },
+                {
+                  "name": "Pulled Pork",
+                  "price": "$13.00",
+                  "description": "Hickory-smoked pork, Kansas style BBQ sauce, served with fries."
+                }
+              ]
+            },
+            {
+              "name": "Chef Entrees",
+              "items": [
+                {
+                  "name": "BBQ Ribs",
+                  "price": "$18",
+                  "description": "Southern style served with Kansas style BBQ sauce. Add french fries $3.00 | Add onion rings $4.00."
+                },
+                {
+                  "name": "Fontina Vodka Penne",
+                  "price": "$18",
+                  "description": "Penne alla vodka topped with grilled chicken breast and melted fontina cheese, parmesan cheese, and basil leaves."
+                },
+                {
+                  "name": "Fettuccine Al Americaine",
+                  "price": "$18",
+                  "description": "Creamy seafood tomato sauce, grape tomatoes, garlic, shrimp, lobster meat, fettuccine pasta, parmesan cheese."
+                },
+                {
+                  "name": "Rosemary Cream Pasta",
+                  "price": "$18",
+                  "description": "Fusilli pasta, rosemary cream sauce, shrimp."
+                },
+                {
+                  "name": "Red Wine Braised Beef",
+                  "price": "$18",
+                  "description": "Garlic mashed potatoes, roasted veggies, 6 oz braised beef, bordelaise sauce."
+                },
+                {
+                  "name": "Thai Sweet Chili Salmon",
+                  "price": "$18",
+                  "description": "Cilantro lime rice, cucumber & tomato salad, seared salmon, Thai sweet chili sauce."
+                }
+              ]
+            },
+            {
+              "name": "Latin Food",
+              "items": [
+                {
+                  "name": "Birria Queso Tacos",
+                  "price": "$13.99",
+                  "description": "Three corn tortilla tacos filled with braised beef birria, mozzarella, and mild cheddar cheese. Served with beef consome and salsa verde."
+                },
+                {
+                  "name": "Steak Tacos",
+                  "price": "$13.99",
+                  "description": "Three steak tacos topped with onions and cilantro. Served with corn in a cup."
+                },
+                {
+                  "name": "Fish Tacos",
+                  "price": "$13.50",
+                  "description": "Three chargrilled tilapia filet tacos on corn tortillas topped with house made chipotle aioli and rainbow citrus slaw."
+                },
+                {
+                  "name": "Burritos",
+                  "price": "$11.00",
+                  "description": "Choose steak, chicken, birria, or chorizo. Large flour tortilla seared a la plancha, filled with cheese, lettuce, pico de gallo, sour cream, and beans. Served with salsa verde."
+                },
+                {
+                  "name": "Quesadilla",
+                  "price": "$13.00",
+                  "description": "Choose steak, chicken, birria, or chorizo. Served with cilantro lime rice, guacamole, and salsa verde."
+                },
+                {
+                  "name": "Fajitas",
+                  "price": "$13.50",
+                  "description": "Choice of steak or chicken. Served on a pita with a side of fries."
+                },
+                {
+                  "name": "Torta",
+                  "price": "$12.00",
+                  "description": "Choice of protein on house made bread with beans, pico de gallo, mayo, avocado, and mozzarella."
+                }
+              ]
+            },
+            {
+              "name": "Breakfast & Skillets",
+              "availability": "Available until 2PM",
+              "items": [
+                {
+                  "name": "American Skillet (Bacon)",
+                  "price": "$12",
+                  "description": "Urban style potatoes, eggs, red onions, green peppers, mozzarella cheese."
+                },
+                {
+                  "name": "Steak Skillet",
+                  "price": "$12",
+                  "description": "Urban style potatoes, eggs, red onions, green peppers, mozzarella cheese."
+                },
+                {
+                  "name": "Mexican Skillet (Chorizo)",
+                  "price": "$12",
+                  "description": "Urban style potatoes, eggs, red onions, green peppers, mozzarella cheese."
+                }
+              ]
+            },
+            {
+              "name": "Breakfast Burritos",
+              "availability": "Available until 2PM",
+              "items": [
+                {
+                  "name": "Steak Breakfast Burrito",
+                  "price": "$12",
+                  "description": "Large flour tortilla seared a la plancha, filled with cheese, eggs, and veggies. Served with house made roasted potatoes."
+                },
+                {
+                  "name": "Chorizo Breakfast Burrito",
+                  "price": "$12",
+                  "description": "Large flour tortilla seared a la plancha, filled with cheese, eggs, and veggies. Served with house made roasted potatoes."
+                },
+                {
+                  "name": "Bacon Breakfast Burrito",
+                  "price": "$12",
+                  "description": "Large flour tortilla seared a la plancha, filled with cheese, eggs, and veggies. Served with house made roasted potatoes."
+                },
+                {
+                  "name": "Egg & Veggies Breakfast Burrito",
+                  "price": "$12",
+                  "description": "Large flour tortilla seared a la plancha, filled with cheese, eggs, and veggies. Served with house made roasted potatoes."
+                }
+              ]
+            },
+            {
+              "name": "Kids Menu",
+              "items": [
+                {
+                  "name": "Mac & Cheese",
+                  "price": "$9",
+                  "description": "Served with fries & drink. Kids under 12."
+                },
+                {
+                  "name": "Kids Chicken Tenders",
+                  "price": "$9",
+                  "description": "Served with fries & drink. Kids under 12."
+                },
+                {
+                  "name": "Kids Burger",
+                  "price": "$9",
+                  "description": "Served with fries & drink. Kids under 12."
+                }
+              ]
+            },
+            {
+              "name": "Sides",
+              "items": [
+                { "name": "Onion Rings", "price": "$5" },
+                { "name": "French Fries", "price": "$4.5" },
+                { "name": "Mac & Cheese", "price": "$5" },
+                { "name": "Cilantro Lemon Rice", "price": "$4.5" },
+                { "name": "Truffle Fries", "price": "$5" },
+                { "name": "Beans", "price": "$4" },
+                {
+                  "name": "Corn in a Cup",
+                  "price": "$3.5",
+                  "description": "Roasted corn, cotija cheese, mayo, lime chili powder."
+                }
+              ]
+            },
+            {
+              "name": "Beverages",
+              "items": [
+                { "name": "Bottled Water", "price": "$2.5" },
+                { "name": "Soft Drinks", "price": "$3" },
+                { "name": "Horchata", "price": "$3.5" },
+                { "name": "Glass Coca Cola", "price": "$3.5" },
+                { "name": "Glass Jarritos", "price": "$3.5" }
+              ]
+            },
+            {
+              "name": "Crafted Drinks (21+)",
+              "items": [
+                {
+                  "name": "Blueberry Mojito",
+                  "price": "$8",
+                  "description": "Tito’s vodka, blueberry, fresh mint, citrus sour, sparkling water."
+                },
+                {
+                  "name": "Paloma",
+                  "price": "$8",
+                  "description": "Corazon tequila, grapefruit soda, citrus sour, chamoy and tajin rim."
+                },
+                {
+                  "name": "Lavender Lemonade",
+                  "price": "$8",
+                  "description": "Tito’s vodka, lemon juice, lavender syrup, sparkling water."
+                },
+                {
+                  "name": "Sangria",
+                  "price": "$8",
+                  "description": "Tito’s vodka, orange liqueur, coconut rum, red wine."
+                },
+                {
+                  "name": "House Margarita",
+                  "price": "$8",
+                  "description": "Tequila Corazon, lime, orange liqueur, agave."
+                }
+              ]
+            },
+            {
+              "name": "Beers (21+)",
+              "items": [
+                { "name": "Victoria" },
+                { "name": "Modelo" },
+                { "name": "Stella" }
+              ]
+            }
+          ]
+        },
+        {
+          "menu_name": "Catering Menu",
+          "source_type": "pdf",
+          "source_url": "https://framerusercontent.com/assets/ntzWxKlfBBNRssCF0AbMbrQx5s.pdf",
+          "sections": [
+            {
+              "name": "Appetizers",
+              "items": [
+                { "name": "Caprese Skewers", "description": "Grape tomatoes, fresh basil, and mozzarella cheese." },
+                { "name": "Lamb Chop Lollipops", "description": "Seasoned with house spices and served with a bordelaise sauce." },
+                { "name": "Marinated Chicken Skewers", "description": "Chicken strips with garlic, ginger, and chili sauce." },
+                { "name": "Orange Chicken Bites", "description": "Cubed fried chicken breast on a skewer served with a sweet orange sauce." },
+                { "name": "Stuffed Mushrooms", "description": "Ricotta cheese and spinach topped with grated Parmesan cheese." },
+                { "name": "Tomato Bruschetta", "description": "Crispy crostini topped with tomato, fresh basil, Parmesan cheese, and balsamic glaze." },
+                { "name": "Wings", "description": "BBQ, Buffalo, or Sweet Chili." },
+                { "name": "Mini Vegetarian Quesadillas", "description": "Filled with spinach, onions, peppers, and a Mexican cheese blend in a mini tortilla. Served with salsa and sour cream." }
+              ]
+            },
+            {
+              "name": "Sandwiches",
+              "serving_sizes": "Small: 16 halves serves 8 | Medium: 24 halves serves 12 | Large: 32 halves serves 16",
+              "items": [
+                { "name": "Monterey Chicken Sandwich", "description": "House bread with grilled chicken breast, coleslaw, crisp bacon, Muenster cheese, and chipotle aioli." },
+                { "name": "Ham & Cheese Sandwich", "description": "House bread with ham, Muenster cheese, lettuce, tomato, onions, and mayo." },
+                { "name": "Hand-Breaded Chicken", "description": "Lightly breaded chicken breast covered in hot dry seasoning, shredded lettuce, tomato, and ranch dressing." },
+                { "name": "Turkey Wrap", "description": "Pinwheel-wrapped sandwich with turkey, cranberry sauce, mascarpone spread, cucumber bites, apple slices, and mixed greens with house dressing." },
+                { "name": "Vegan Wrap", "description": "Roasted seasonal vegetables, marinated tofu, and pesto oil, wrapped pinwheel style." },
+                { "name": "Caprese Prosciutto Sandwich", "description": "House bread with prosciutto, fresh mozzarella, sliced vine-ripened tomatoes, pesto oil, fresh basil, and balsamic glaze." },
+                { "name": "Chicken Salad Sandwich", "description": "Bibb lettuce, grapes, chicken salad, and pesto bread." }
+              ]
+            },
+            {
+              "name": "Salads",
+              "note": "Add protein for an additional charge",
+              "items": [
+                { "name": "Classic Caesar Salad", "description": "Chopped romaine lettuce, house-made Caesar dressing, rosemary croutons, and Pecorino cheese." },
+                { "name": "Santa Fe Salad", "description": "Lettuce, black beans, roasted vegetables, shredded cheese, crisp tortilla strips, chipotle dressing." },
+                { "name": "Arugula, Orange, and Goat Cheese Salad", "description": "Fresh arugula, pickled beets, orange sections, goat cheese, grainy mustard vinaigrette." },
+                { "name": "Cobb Salad", "description": "Romaine lettuce, eggs, tomatoes, corn, blue cheese, and bacon." },
+                { "name": "Chop Salad", "description": "Chopped romaine, tomato, baby mozzarella, blue cheese, Kalamata olives, homemade dressing." },
+                { "name": "Apple Pecan Salad", "description": "Spinach, baby kale, apples, pecans, blue cheese, dried cherries, balsamic fig vinaigrette." },
+                { "name": "Greek Pasta Salad", "description": "Gemelli pasta, Kalamata olives, feta, cucumbers, bell peppers, cherry tomatoes, lemon oregano, roasted garlic dressing." }
+              ]
+            },
+            {
+              "name": "Pasta",
+              "pricing": "Small platter: 10 people, $70 | Medium platter: 15–20 people, $90 | Large platter: 25–30 people, $140",
+              "note": "Add chicken: +$20 Small/Medium, +$40 Large",
+              "items": [
+                { "name": "Baked Macaroni & Cheese", "description": "Elbow pasta with cheddar, Pecorino, Parmesan, topped with butter-toasted crumbs." },
+                { "name": "Housemade Meat Lasagna", "description": "Ground beef, pork, ricotta, marinara, mozzarella." },
+                { "name": "Tortellini Bolognese", "description": "Cheese tortellini with house-made Bolognese sauce." },
+                { "name": "Rosemary Cream Pasta", "description": "Rosemary cream sauce, fusilli pasta, asparagus, goat cheese." },
+                { "name": "Spaghetti and Meat Balls", "description": "House-made marinara or meat sauce with house-made meatballs." },
+                { "name": "Four Cheese Raviolis", "description": "Four cheese ravioli, meat or marinara sauce, Pecorino cheese." },
+                { "name": "Vodka Pasta", "description": "Vodka cream sauce, penne pasta, Pecorino cheese." },
+                { "name": "Roasted Cauliflower Pasta", "description": "Roasted cauliflower, orecchiette, sun-dried tomatoes, garlic, herbs, creamy Parmesan." }
+              ]
+            },
+            {
+              "name": "Sides",
+              "items": [
+                { "name": "Garlic Mash Potatoes" },
+                { "name": "Roasted Seasonal Veggies" },
+                { "name": "Sweet potato or butternut squash" },
+                { "name": "Rosemary Roasted Potatoes" },
+                { "name": "Smoke Roasted Brussels Sprouts", "description": "With Parmesan cheese." },
+                { "name": "Asparagus", "description": "MP" },
+                { "name": "Broccoli with Herbs & Butter", "description": "MP" },
+                { "name": "Steamed Veggies" },
+                { "name": "Wild Rice" },
+                { "name": "Grains and Veggies" }
+              ]
+            },
+            {
+              "name": "Build Your Own",
+              "items": [
+                { "name": "Pick 2 Sandwich + Salad", "description": "Pick 2 items per person." },
+                { "name": "Pick 3 Sandwich + Salad + Pasta", "description": "Pick 3 items per person." }
+              ]
+            },
+            {
+              "name": "Breakfast",
+              "subsections": [
+                {
+                  "name": "Continental Breakfast",
+                  "items": [
+                    { "name": "Assorted Kringle, mini Danish, or breakfast breads" },
+                    { "name": "Assorted bagels with whipped cream cheese or assorted mini muffins" },
+                    { "name": "Fresh fruit tray" },
+                    { "name": "Orange juice" },
+                    { "name": "Coffee" }
+                  ]
+                },
+                {
+                  "name": "A la Carte",
+                  "items": [
+                    { "name": "Assorted yogurt" },
+                    { "name": "Assorted Kringle, mini Danish, or breakfast breads" },
+                    { "name": "Assorted bagels with whipped cream cheese" },
+                    { "name": "Mini croissants with whipped butter and jam" }
+                  ]
+                },
+                {
+                  "name": "Breakfast Buffet – Formal",
+                  "items": [
+                    { "name": "Scrambled eggs", "description": "With or without cheese." },
+                    { "name": "Hash browns" },
+                    { "name": "Fried potatoes with onions" },
+                    { "name": "Smoked bacon" },
+                    { "name": "Breakfast sausage" },
+                    { "name": "Fresh fruit tray" },
+                    { "name": "Fruit salad" },
+                    { "name": "Assorted whole seasonal fruit" },
+                    { "name": "Orange juice" },
+                    { "name": "Coffee" }
+                  ]
+                },
+                {
+                  "name": "Breakfast Buffet – Exquisite",
+                  "items": [
+                    { "name": "Smoked bacon chicken and bacon quiche" },
+                    { "name": "Italian sausage frittata" },
+                    { "name": "Warm biscuits with sausage gravy" },
+                    { "name": "Thick cut French toast with warm syrup" },
+                    { "name": "Smoked salmon" },
+                    { "name": "Fresh bagels" },
+                    { "name": "O’Brian potatoes" },
+                    { "name": "Veggie frittata" },
+                    { "name": "Orange juice" },
+                    { "name": "Coffee" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Exquisite Buffet",
+              "items": [
+                { "name": "Cabernet Braised Short Ribs" },
+                { "name": "Beef Medallions" },
+                { "name": "Birria Braised Short Ribs" },
+                { "name": "Grilled Chicken Breast" },
+                { "name": "Stuffed Chicken Breast" },
+                { "name": "Italian Breaded Chicken Breast" },
+                { "name": "Creamy Tuscan Chicken Breast" },
+                { "name": "Bacon Wrapped Pork Loin" },
+                { "name": "Grilled Boneless Pork Chop" },
+                { "name": "Chipotle Bacon Wrapped Pork Medallion" },
+                { "name": "Baby Back Pork Ribs" },
+                { "name": "Mini Pork Shank Estofado (Wing)" },
+                { "name": "Maple-Soy Glazed Salmon" },
+                { "name": "Mahi Mahi" },
+                { "name": "Baked Cod" },
+                { "name": "Roasted Vegetable Lasagna" }
+              ]
+            },
+            {
+              "name": "Formal Buffet",
+              "subsections": [
+                {
+                  "name": "Beef",
+                  "items": [
+                    { "name": "Short Ribs" },
+                    { "name": "Pismo Beef Tenderloin with Chimichurri sauce" },
+                    { "name": "Churrasco / Herb Spices" }
+                  ]
+                },
+                {
+                  "name": "Chicken",
+                  "items": [
+                    { "name": "Bone-In Chicken" },
+                    { "name": "Grilled Chicken Breast" },
+                    { "name": "Chicken Scallopini" },
+                    { "name": "Chicken Marsala" }
+                  ]
+                },
+                {
+                  "name": "Pork",
+                  "items": [
+                    { "name": "Roast Loin of Pork or Boneless Pork Chop" },
+                    { "name": "Bacon Wrapped Pork Medallion" },
+                    { "name": "Italian Breaded Pork Scallopini" }
+                  ]
+                },
+                {
+                  "name": "Seafood",
+                  "items": [
+                    { "name": "Baked Atlantic Cod" },
+                    { "name": "Lobster Ravioli" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Nabby's Restaurant & Catering",
+      "website": "https://www.nabbyscatering.com/",
+      "menus": [
+        {
+          "menu_name": "Breakfast Menu",
+          "source_url": "https://www.nabbyscatering.com/breakfast-menu/",
+          "availability": "Tuesday-Saturday 6am-11am & Sunday 7am-NOON",
+          "sections": [
+            {
+              "name": "Egg-Specialty",
+              "description": "Includes two eggs any style, hash browns & toast.",
+              "items": [
+                { "name": "Eggs Only", "price": "$6.75" },
+                { "name": "Eggs with Bacon or Sausage", "price": "$9.25" },
+                { "name": "Ham & Eggs", "price": "$9.40" },
+                { "name": "Corned Beef Hash & Eggs", "price": "$10.35" },
+                { "name": "Steak and Eggs (8 oz. N.Y. Steak)", "price": "$18.99" },
+                { "name": "Italian Sausage & Eggs", "price": "$10.35" },
+                { "name": "One Egg, One Sausage Patty & Toast", "price": "$4.99" }
+              ]
+            },
+            {
+              "name": "Omelettes",
+              "description": "Three egg omelette, hash browns & toast. Made with egg whites +$1.50. Omelette cheese additional $1.25.",
+              "items": [
+                { "name": "Meat Lovers", "price": "$12.40" },
+                { "name": "Cheese", "price": "$9.85" },
+                { "name": "Ham", "price": "$9.95" },
+                { "name": "Italian Sausage & Peppers", "price": "$11.25" },
+                { "name": "Denver", "price": "$10.40" },
+                { "name": "Veggie", "price": "$10.40", "description": "Mushroom, onions, green pepper and tomato." }
+              ]
+            },
+            {
+              "name": "Waffles Pancakes Biscuits",
+              "items": [
+                { "name": "Biscuit & Gravy", "price": "Single $3.99 | Double $7.50" },
+                { "name": "French Toast", "price": "$5.30" },
+                { "name": "Belgian Waffle", "price": "$7.25" },
+                { "name": "Belgian Waffle with Fruit & Whipped Cream", "price": "$8.75" },
+                { "name": "Pancakes", "price": "(3) $7.25 | Short Stack $6.10" },
+                { "name": "Silver Dollar Pancakes (6)", "price": "$5.80" },
+                { "name": "Kids Meal Silver Dollar Pancakes (3)", "price": "$4.99", "description": "Sausage patty (1), small drink." },
+                { "name": "Oatmeal", "price": "$4.50" }
+              ]
+            },
+            {
+              "name": "Breakfast Sandwiches",
+              "items": [
+                { "name": "A.M. Snacker", "price": "$4.25", "description": "Fried egg with sausage patty or bacon with cheese on an English muffin." },
+                { "name": "Breakfast Burrito", "price": "$5.10", "description": "Eggs, cheese, potato, bacon or sausage." },
+                { "name": "2 Eggs Scrambled on Toast", "price": "$3.70" },
+                { "name": "2 Eggs, Bacon or Sausage", "price": "$4.50" },
+                { "name": "Ham & Eggs", "price": "$4.60" },
+                { "name": "Peppers & Eggs", "price": "$4.50" },
+                { "name": "B.L.T. on Toast", "price": "$5.60" },
+                { "name": "Extras: French Bread or Cheese", "price": "65c" }
+              ]
+            },
+            {
+              "name": "Side Orders",
+              "items": [
+                { "name": "One Egg", "price": "$1.25", "description": "Any style." },
+                { "name": "Corn Beef Hash", "price": "$4.99" },
+                { "name": "Hash Browns", "price": "$3.45" },
+                { "name": "Bacon or Sausage", "price": "$3.99" },
+                { "name": "Ham", "price": "$4.10" },
+                { "name": "Toast", "price": "$2.35" },
+                { "name": "English Muffin", "price": "$2.50" },
+                { "name": "Orange Juice (Sm 12 oz)", "price": "$2.75" },
+                { "name": "Orange Juice (Lg 20 oz)", "price": "$3.60" },
+                { "name": "Milk (Sm 12 oz)", "price": "$2.75" },
+                { "name": "Milk (Lg 20 oz)", "price": "$3.60" },
+                { "name": "Side of Gravy", "price": "$2.10" }
+              ]
+            }
+          ]
+        },
+        {
+          "menu_name": "Lunch / Dinner Menu",
+          "source_url": "https://www.nabbyscatering.com/lunch-dinner-menu/",
+          "sections": [
+            {
+              "name": "Visible Items Extracted",
+              "items": [
+                { "name": "Italian Beef", "price": "$7.99", "description": "Thinly sliced beef in Italian gravy served on French bread." },
+                { "name": "10\" Beef", "price": "$12.75" },
+                { "name": "Italian Sausage", "price": "$6.95", "description": "Served on French bread." },
+                { "name": "Double Italian Sausage", "price": "$9.95" },
+                { "name": "Homemade Italian Meatball", "price": "$6.95" },
+                { "name": "10\" Italian Meatball", "price": "$9.95" },
+                { "name": "Combo Beef & Sausage", "price": "$10.50" },
+                { "name": "Nabby's Trio", "price": "$16.99", "description": "Italian beef, sausage & meatballs on French bread topped with red sauce & mozzarella cheese. Cheese or peppers - 75." },
+                { "name": "8 Ounce N.Y. Cut Steak Sandwich", "price": "$17.99", "description": "Charbroiled to your request. Served on French bread with lettuce & tomato." },
+                { "name": "Poor Boy (6 oz.)", "price": "$13.25", "description": "Original hoagie grilled tender and juicy with mozzarella cheese & grilled onion on garlic bread." },
+                { "name": "Pork Tenderloin Sandwich", "price": "$5.75" },
+                { "name": "Breaded Cod Filet Sandwich", "price": "$6.75" },
+                { "name": "Double Breaded Cod Filet Fish Sandwich", "price": "$9.75", "description": "With tartar sauce & lettuce." },
+                { "name": "Fried Chicken Sandwich", "price": "$5.25" },
+                { "name": "Grilled Chicken Breast Sandwich (6 oz.)", "price": "$7.99", "description": "All white meat grilled to perfection, served with lettuce, tomato & mayo." },
+                { "name": "Chicken Parmesan Sandwich (6 oz.)", "price": "$9.25", "description": "All white meat chicken breast served with mozzarella & marinara on garlic bread." },
+                { "name": "Turkey Triple Double Decker Club", "price": "$8.60", "description": "With Bacon - $10.25." },
+                { "name": "BLT Triple Decker Club", "price": "$8.60" },
+                { "name": "Grilled Cheese", "price": "$4.99" },
+                { "name": "Grilled Cheese with Ham", "price": "$6.99" },
+                { "name": "Gyros", "price": "$7.30" },
+                { "name": "Gyro Plate", "price": "$13.50" }
+              ]
+            }
+          ]
+        },
+        {
+          "menu_name": "Catering Menu",
+          "source_url": "https://www.nabbyscatering.com/catering/",
+          "sections": [
+            {
+              "name": "Additional Sides / Add-ons",
+              "items": [
+                { "name": "Juice", "price": "$4.25" },
+                { "name": "Coffee (12-14 cups)", "price": "$27.99" },
+                { "name": "Pepsi / Diet Pepsi / Mountain Dew / Sierra Mist / Bottled Water", "price": "$1.50" },
+                { "name": "Warming Kit", "price": "$12.00" }
+              ]
+            },
+            {
+              "name": "Buffet Entrees",
+              "items": [
+                { "name": "Italian Beef" },
+                { "name": "B.B.Q. Chicken" },
+                { "name": "Fried Chicken" },
+                { "name": "Greek Chicken" },
+                { "name": "Herb Roast Chicken" },
+                { "name": "Chicken Vesuvio" },
+                { "name": "Polish Sausage & Sauerkraut" },
+                { "name": "Roast Pork & Gravy" },
+                { "name": "Roast Turkey & Gravy" },
+                { "name": "Baked Honey Glazed Ham" },
+                { "name": "Spaghetti with Meatballs" },
+                { "name": "Baked Mostaccioli" },
+                { "name": "4 Cheese Ravioli" },
+                { "name": "Italian Sausage & Sweet Peppers" }
+              ]
+            },
+            {
+              "name": "Side Dishes",
+              "items": [
+                { "name": "Mostaccioli" },
+                { "name": "Rice Pilaf" },
+                { "name": "Buttered Noodles" },
+                { "name": "Steamed Rice" },
+                { "name": "Mashed Potatoes/Gravy" },
+                { "name": "Cheesy Potatoes" },
+                { "name": "Roasted Red Potatoes" },
+                { "name": "Vesuvio Potatoes" },
+                { "name": "Baked Macaroni & Cheese" },
+                { "name": "Oven Brown Potatoes" },
+                { "name": "Sage Dressing" },
+                { "name": "Scalloped Potatoes" }
+              ]
+            },
+            {
+              "name": "Vegetables",
+              "items": [
+                { "name": "Mixed Vegetables" },
+                { "name": "Baked Beans" },
+                { "name": "Hot & Sweet Peppers" },
+                { "name": "Butter Green Beans" }
+              ]
+            },
+            {
+              "name": "Salads",
+              "items": [
+                { "name": "Creamy Cole Slaw" },
+                { "name": "Potato Salad (American Style)" },
+                { "name": "Garden Salad (Italian & Ranch Dressing)" },
+                { "name": "Italian Pasta Salad" },
+                { "name": "Macaroni Salad" }
+              ]
+            },
+            {
+              "name": "Equipment / Extras",
+              "items": [
+                { "name": "Tableware Setting", "price": "$0.75 per person", "description": "Includes plates, napkins, knives, forks, spoons." },
+                { "name": "Reusable Warming Kit", "price": "$12.00", "description": "Includes reusable rack, pan & 2 cans of Sterno." },
+                { "name": "Serving Spoon", "price": "$1.75 each" },
+                { "name": "2 Hr. Sterno", "price": "$3.00 each" },
+                { "name": "Stainless Steel Tongs", "price": "$3.75 each" }
+              ]
+            },
+            {
+              "name": "Hot and Cold Hors d'oeuvres",
+              "items": [
+                { "name": "Fried Chicken or Roasted Chicken (32 pcs)", "price": "$43.20" },
+                { "name": "Fried Chicken or Roasted Chicken (48 pcs)", "price": "$62.40" },
+                { "name": "Fried Chicken or Roasted Chicken (96 pcs)", "price": "$120.00" }
+              ]
+            },
+            {
+              "name": "Salad / Party Options",
+              "items": [
+                { "name": "American Potato Salad" },
+                { "name": "Macaroni Salad" },
+                { "name": "Tomato-Cucumber Onion" },
+                { "name": "Tropical Fruit Salad" },
+                { "name": "Serves 20-25 Choice", "price": "$24.85" }
+              ]
+            },
+            {
+              "name": "Sandwich Tray",
+              "items": [
+                {
+                  "name": "Choice of two meats/cheeses",
+                  "description": "Ham & American Cheese, Italian, Roast Beef, or Turkey & Mozzarella garnished with iceberg lettuce."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

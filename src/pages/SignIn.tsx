@@ -36,6 +36,8 @@ const SignIn = () => {
             navigate('/driver-dashboard');
           } else if (role === 'admin') {
             navigate('/admin-dashboard');
+          } else if (role === 'diner') {
+            navigate('/order');
           } else {
             navigate('/');
           }

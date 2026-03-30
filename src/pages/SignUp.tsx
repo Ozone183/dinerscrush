@@ -13,6 +13,7 @@ const SignUp = () => {
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
   const navigate = useNavigate();
+  const [address, setAddress] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +39,8 @@ const SignUp = () => {
         navigate('/restaurant-dashboard');
       } else if (role === 'driver') {
         navigate('/driver-dashboard');
+      } else if (role === 'diner') {
+        navigate('/order');
       } else {
         navigate('/');
       }
@@ -105,17 +108,29 @@ const SignUp = () => {
                 placeholder="Email address"
               />
             </div>
+            {role === 'diner' && (
+  <div>
+    <input
+      type="text"
+      value={address}
+      onChange={(e) => setAddress(e.target.value)}
+      className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-[#FF6B35] focus:border-[#FF6B35] sm:text-sm"
+      placeholder="Delivery Address"
+    />
+  </div>
+)}
             <div>
               <label htmlFor="role" className="sr-only">I am a...</label>
               <select
-                id="role"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-[#FF6B35] focus:border-[#FF6B35] focus:z-10 sm:text-sm"
-              >
-                <option value="restaurant">Restaurant Owner - Crush Kitchen</option>
-                <option value="driver">Delivery Driver - Crusher</option>
-              </select>
+  id="role"
+  value={role}
+  onChange={(e) => setRole(e.target.value)}
+  className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-[#FF6B35] focus:border-[#FF6B35] focus:z-10 sm:text-sm"
+>
+  <option value="diner">🍽️ Crush – I want to order food</option>
+  <option value="restaurant">🍳 Crush Kitchen – I own a restaurant</option>
+  <option value="driver">⚡ Crusher – I want to deliver</option>
+</select>
             </div>
             <div>
               <label htmlFor="password" className="sr-only">Password</label>

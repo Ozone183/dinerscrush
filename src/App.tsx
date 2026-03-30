@@ -4,9 +4,11 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import SignIn from './pages/SignIn';
 import SignUp from './pages/SignUp';
+import CustomerOrder from './pages/CustomerOrder';
 import RestaurantDashboard from './pages/RestaurantDashboard';
 import DriverDashboard from './pages/DriverDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import RestaurantMenu from './pages/RestaurantMenu';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRole }: { children: React.ReactNode, allowedRole?: string }) => {
@@ -37,6 +39,8 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUp />} />
+          <Route path="/order" element={<CustomerOrder />} />
+          <Route path="/restaurant/:id" element={<RestaurantMenu />} />
           
           {/* Protected routes */}
           <Route path="/restaurant-dashboard" element={
