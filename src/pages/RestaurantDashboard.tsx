@@ -6,10 +6,13 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
   where,
+  type Query,
+  type Unsubscribe,
 } from 'firebase/firestore';
 import toast, { Toaster } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +22,8 @@ type OrderStatus =
   | 'confirmed'
   | 'preparing'
   | 'ready'
+  | 'picked_up'
+  | 'on_the_way'
   | 'delivered'
   | 'cancelled';
 
@@ -36,6 +41,7 @@ interface OrderItem {
 interface FirestoreTimestampLike {
   seconds?: number;
   nanoseconds?: number;
+  toDate?: () => Date;
 }
 
 interface Order {
@@ -52,7 +58,14 @@ interface Order {
   totalAmount?: number;
   totalCents?: number;
   status: OrderStatus;
+  driverId?: string | null;
+  driverName?: string | null;
   createdAt: FirestoreTimestampLike | null;
+  updatedAt?: FirestoreTimestampLike | null;
+  assignedAt?: FirestoreTimestampLike | null;
+  pickedUpAt?: FirestoreTimestampLike | null;
+  onTheWayAt?: FirestoreTimestampLike | null;
+  deliveredAt?: FirestoreTimestampLike | null;
 }
 
 interface MenuItem {
@@ -75,7 +88,8 @@ interface RestaurantIdentifiers {
 }
 
 const OPEN_STATUSES: OrderStatus[] = ['pending', 'confirmed', 'preparing'];
-const COMPLETED_STATUSES: OrderStatus[] = ['ready', 'delivered'];
+const HANDOFF_STATUSES: OrderStatus[] = ['ready', 'picked_up', 'on_the_way'];
+const COMPLETED_STATUSES: OrderStatus[] = ['delivered', 'cancelled'];
 
 const pickFirstString = (...values: unknown[]) => {
   for (const value of values) {
@@ -117,6 +131,13 @@ const getTimestampSeconds = (value: FirestoreTimestampLike | null | undefined) =
   return typeof value?.seconds === 'number' ? value.seconds : 0;
 };
 
+const formatTimestamp = (value: FirestoreTimestampLike | null | undefined) => {
+  if (!value) return 'Just now';
+  if (typeof value.toDate === 'function') return value.toDate().toLocaleString();
+  if (typeof value.seconds === 'number') return new Date(value.seconds * 1000).toLocaleString();
+  return 'Just now';
+};
+
 const getOrderItemPriceCents = (item: OrderItem) => {
   const fromPriceCents = normalizeMoneyToCents(item.priceCents);
   if (fromPriceCents > 0) return fromPriceCents;
@@ -156,6 +177,40 @@ const getMenuItemPriceCents = (item: MenuItem) => {
   return 0;
 };
 
+const getStatusColor = (status: OrderStatus) => {
+  switch (status) {
+    case 'pending':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'confirmed':
+      return 'bg-blue-100 text-blue-800';
+    case 'preparing':
+      return 'bg-purple-100 text-purple-800';
+    case 'ready':
+      return 'bg-green-100 text-green-800';
+    case 'picked_up':
+      return 'bg-sky-100 text-sky-800';
+    case 'on_the_way':
+      return 'bg-orange-100 text-orange-800';
+    case 'delivered':
+      return 'bg-gray-100 text-gray-800';
+    case 'cancelled':
+      return 'bg-red-100 text-red-700';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
+
+const getStatusLabel = (status: OrderStatus) => {
+  switch (status) {
+    case 'picked_up':
+      return 'Picked Up';
+    case 'on_the_way':
+      return 'On the Way';
+    default:
+      return status.charAt(0).toUpperCase() + status.slice(1);
+  }
+};
+
 const RestaurantDashboard = () => {
   const { currentUser, loading: authLoading } = useAuth();
 
@@ -176,23 +231,35 @@ const RestaurantDashboard = () => {
 
   useEffect(() => {
     if (authLoading || !currentUser?.uid) return;
-    void bootstrapDashboard();
+
+    let unsubscribes: Unsubscribe[] = [];
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      try {
+        const identifiers = await resolveRestaurantIdentifiers(currentUser.uid);
+        if (cancelled) return;
+
+        setRestaurantIdentifiers(identifiers);
+        await fetchMenu(identifiers);
+        if (cancelled) return;
+
+        unsubscribes = subscribeToOrders(identifiers);
+      } catch (error) {
+        console.error('Error bootstrapping restaurant dashboard:', error);
+        toast.error('Failed to load restaurant dashboard');
+        setLoadingOrders(false);
+        setLoadingMenu(false);
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+    };
   }, [authLoading, currentUser?.uid]);
-
-  const bootstrapDashboard = async () => {
-    if (!currentUser?.uid) return;
-
-    try {
-      const identifiers = await resolveRestaurantIdentifiers(currentUser.uid);
-      setRestaurantIdentifiers(identifiers);
-      await Promise.all([fetchOrders(identifiers), fetchMenu(identifiers)]);
-    } catch (error) {
-      console.error('Error bootstrapping restaurant dashboard:', error);
-      toast.error('Failed to load restaurant dashboard');
-      setLoadingOrders(false);
-      setLoadingMenu(false);
-    }
-  };
 
   const resolveRestaurantIdentifiers = async (
     authUid: string
@@ -242,51 +309,76 @@ const RestaurantDashboard = () => {
     };
   };
 
-  const fetchOrders = async (identifiers: RestaurantIdentifiers) => {
-    try {
-      setLoadingOrders(true);
+  const subscribeToOrders = (identifiers: RestaurantIdentifiers): Unsubscribe[] => {
+    setLoadingOrders(true);
 
-      const collected = new Map<string, Order>();
-      const ordersRef = collection(db, 'orders');
+    const queryEntries: Array<{ key: string; query: Query }> = [];
+    const keySet = new Set<string>();
 
-      for (const candidateId of identifiers.candidateIds) {
-        const byRestaurantId = query(ordersRef, where('restaurantId', '==', candidateId));
-        const snapshot = await getDocs(byRestaurantId);
-
-        snapshot.docs.forEach((orderDoc) => {
-          collected.set(orderDoc.id, {
-            id: orderDoc.id,
-            ...orderDoc.data(),
-          } as Order);
+    for (const candidateId of identifiers.candidateIds) {
+      const key = `restaurantId:${candidateId}`;
+      if (!keySet.has(key)) {
+        keySet.add(key);
+        queryEntries.push({
+          key,
+          query: query(collection(db, 'orders'), where('restaurantId', '==', candidateId)),
         });
       }
+    }
 
-      if (identifiers.restaurantDocId) {
-        const byRestaurantDocId = query(
-          ordersRef,
-          where('restaurantDocId', '==', identifiers.restaurantDocId)
-        );
-        const snapshot = await getDocs(byRestaurantDocId);
-
-        snapshot.docs.forEach((orderDoc) => {
-          collected.set(orderDoc.id, {
-            id: orderDoc.id,
-            ...orderDoc.data(),
-          } as Order);
+    if (identifiers.restaurantDocId) {
+      const key = `restaurantDocId:${identifiers.restaurantDocId}`;
+      if (!keySet.has(key)) {
+        keySet.add(key);
+        queryEntries.push({
+          key,
+          query: query(
+            collection(db, 'orders'),
+            where('restaurantDocId', '==', identifiers.restaurantDocId)
+          ),
         });
       }
+    }
 
-      const sortedOrders = Array.from(collected.values()).sort(
+    const snapshotsByQuery = new Map<string, Map<string, Order>>();
+
+    const recomputeOrders = () => {
+      const merged = new Map<string, Order>();
+      snapshotsByQuery.forEach((ordersMap) => {
+        ordersMap.forEach((order, orderId) => {
+          merged.set(orderId, order);
+        });
+      });
+
+      const sortedOrders = Array.from(merged.values()).sort(
         (a, b) => getTimestampSeconds(b.createdAt) - getTimestampSeconds(a.createdAt)
       );
 
       setOrders(sortedOrders);
-    } catch (error) {
-      console.error('Error fetching orders:', error);
-      toast.error('Failed to load orders');
-    } finally {
       setLoadingOrders(false);
-    }
+    };
+
+    return queryEntries.map(({ key, query: ordersQuery }) =>
+      onSnapshot(
+        ordersQuery,
+        (snapshot) => {
+          const current = new Map<string, Order>();
+          snapshot.docs.forEach((orderDoc) => {
+            current.set(orderDoc.id, {
+              id: orderDoc.id,
+              ...(orderDoc.data() as Omit<Order, 'id'>),
+            });
+          });
+          snapshotsByQuery.set(key, current);
+          recomputeOrders();
+        },
+        (error) => {
+          console.error('Error listening to orders:', error);
+          toast.error('Failed to sync orders');
+          setLoadingOrders(false);
+        }
+      )
+    );
   };
 
   const fetchMenu = async (identifiers: RestaurantIdentifiers) => {
@@ -343,13 +435,7 @@ const RestaurantDashboard = () => {
         updatedAt: serverTimestamp(),
       });
 
-      setOrders((prev) =>
-        prev.map((order) =>
-          order.id === orderId ? { ...order, status: newStatus } : order
-        )
-      );
-
-      toast.success(`Order ${newStatus}`);
+      toast.success(`Order ${getStatusLabel(newStatus).toLowerCase()}`);
     } catch (error) {
       console.error('Error updating order:', error);
       toast.error('Failed to update order');
@@ -408,6 +494,11 @@ const RestaurantDashboard = () => {
     [orders]
   );
 
+  const handoffOrders = useMemo(
+    () => orders.filter((order) => HANDOFF_STATUSES.includes(order.status)),
+    [orders]
+  );
+
   const completedOrders = useMemo(
     () => orders.filter((order) => COMPLETED_STATUSES.includes(order.status)),
     [orders]
@@ -432,25 +523,6 @@ const RestaurantDashboard = () => {
     if (deliveredOrders.length === 0) return 0;
     return Math.round(deliveredRevenueCents / deliveredOrders.length);
   }, [deliveredOrders, deliveredRevenueCents]);
-
-  const getStatusColor = (status: OrderStatus) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
-      case 'preparing':
-        return 'bg-purple-100 text-purple-800';
-      case 'ready':
-        return 'bg-green-100 text-green-800';
-      case 'delivered':
-        return 'bg-gray-100 text-gray-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-700';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
 
   const renderOrderActions = (order: Order) => {
     if (order.status === 'pending') {
@@ -481,20 +553,37 @@ const RestaurantDashboard = () => {
           onClick={() => updateOrderStatus(order.id, 'ready')}
           className="bg-green-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-600"
         >
-          Mark Ready
+          Mark Ready for Pickup
         </button>
       );
     }
 
     if (order.status === 'ready') {
       return (
-        <button
-          onClick={() => updateOrderStatus(order.id, 'delivered')}
-          className="bg-gray-700 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-800"
-        >
-          Mark Delivered
-        </button>
+        <p className="text-sm text-gray-500">
+          Waiting for a crusher to pick this order up.
+        </p>
       );
+    }
+
+    if (order.status === 'picked_up') {
+      return (
+        <p className="text-sm text-sky-700">
+          {order.driverName || 'A crusher'} picked this order up.
+        </p>
+      );
+    }
+
+    if (order.status === 'on_the_way') {
+      return (
+        <p className="text-sm text-orange-700">
+          {order.driverName || 'A crusher'} is on the way to the customer.
+        </p>
+      );
+    }
+
+    if (order.status === 'delivered') {
+      return <p className="text-sm text-gray-500">Completed by delivery flow.</p>;
     }
 
     return null;
@@ -518,75 +607,52 @@ const RestaurantDashboard = () => {
             )}
             <p className="text-gray-600 text-sm">{order.customerAddress}</p>
           </div>
-
-          <span
-            className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-              order.status
-            )}`}
-          >
-            {order.status.toUpperCase()}
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(order.status)}`}>
+            {getStatusLabel(order.status)}
           </span>
         </div>
 
-        <div className="border-t border-gray-200 pt-4 mb-4">
-          {order.items.map((item, idx) => {
-            const itemTotalCents = getOrderItemPriceCents(item) * item.quantity;
-
-            return (
-              <div key={idx} className="mb-3 rounded-lg border border-gray-100 p-3">
-                <div className="flex justify-between text-sm gap-3">
-                  <span>
-                    {item.quantity}x {item.name}
-                  </span>
-                  <span>{formatCents(itemTotalCents)}</span>
-                </div>
-
-                {item.specialInstructions && (
-                  <p className="text-xs text-orange-600 mt-2">
-                    Item note: {item.specialInstructions}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-
-          {order.orderInstructions && (
-            <div className="rounded-lg bg-orange-50 border border-orange-100 p-3 mb-3">
-              <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
-                Order Instructions
-              </p>
-              <p className="text-sm text-orange-700 mt-1">{order.orderInstructions}</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 text-sm">
+          <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+            <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Placed</p>
+            <p className="mt-1 text-gray-700">{formatTimestamp(order.createdAt)}</p>
+          </div>
+          {order.driverName && (
+            <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+              <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Crusher</p>
+              <p className="mt-1 text-gray-700">{order.driverName}</p>
+              {order.assignedAt && <p className="text-xs text-gray-500 mt-1">Accepted {formatTimestamp(order.assignedAt)}</p>}
             </div>
           )}
+          {(order.pickedUpAt || order.onTheWayAt || order.deliveredAt) && (
+            <div className="rounded-lg bg-gray-50 border border-gray-100 p-3">
+              <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Delivery Flow</p>
+              {order.pickedUpAt && <p className="mt-1 text-gray-700">Picked up {formatTimestamp(order.pickedUpAt)}</p>}
+              {order.onTheWayAt && <p className="text-gray-700">On the way {formatTimestamp(order.onTheWayAt)}</p>}
+              {order.deliveredAt && <p className="text-gray-700">Delivered {formatTimestamp(order.deliveredAt)}</p>}
+            </div>
+          )}
+        </div>
 
+        <div className="border-t border-gray-200 pt-4 mb-4">
+          {order.items.map((item, idx) => (
+            <div key={idx} className="flex justify-between text-sm mb-2 gap-4">
+              <span>{item.quantity}x {item.name}</span>
+              <span>{formatCents(getOrderItemPriceCents(item) * item.quantity)}</span>
+            </div>
+          ))}
           <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between font-semibold">
             <span>Total</span>
             <span className="text-[#FF6B35]">{formatCents(totalCents)}</span>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">{renderOrderActions(order)}</div>
+        <div className="flex flex-wrap gap-2 items-center">
+          {renderOrderActions(order)}
+        </div>
       </div>
     );
   };
-
-  if (authLoading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-        <p className="text-gray-500">Loading restaurant dashboard...</p>
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-        <p className="text-gray-500">
-          You must be signed in as a restaurant to view this page.
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -595,46 +661,43 @@ const RestaurantDashboard = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-[#2D3142]">Restaurant Dashboard</h1>
         <p className="text-gray-600 mt-2">
-          {restaurantIdentifiers?.displayName
-            ? `Managing ${restaurantIdentifiers.displayName}`
-            : 'Manage orders, menu, and track your earnings'}
+          Manage kitchen flow, watch crusher pickup progress, and see deliveries complete live.
         </p>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4 mb-8">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <p className="text-sm text-gray-500">Open Orders</p>
-          <p className="text-3xl font-bold text-[#2D3142] mt-2">{openOrders.length}</p>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
+          <p className="text-2xl font-bold text-[#FF6B35]">{openOrders.length}</p>
+          <p className="text-xs text-gray-500 mt-1">Open Orders</p>
         </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <p className="text-sm text-gray-500">Pending Orders</p>
-          <p className="text-3xl font-bold text-[#FF6B35] mt-2">{pendingOrdersCount}</p>
+        <div className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
+          <p className="text-2xl font-bold text-[#2D3142]">{pendingOrdersCount}</p>
+          <p className="text-xs text-gray-500 mt-1">Pending Orders</p>
         </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <p className="text-sm text-gray-500">Delivered Revenue</p>
-          <p className="text-3xl font-bold text-[#2D3142] mt-2">
-            {formatCents(deliveredRevenueCents)}
-          </p>
+        <div className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
+          <p className="text-2xl font-bold text-[#2D3142]">{handoffOrders.length}</p>
+          <p className="text-xs text-gray-500 mt-1">Ready / In Transit</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
+          <p className="text-2xl font-bold text-[#2D3142]">{deliveredOrders.length}</p>
+          <p className="text-xs text-gray-500 mt-1">Delivered</p>
         </div>
       </div>
 
-      <div className="flex space-x-4 mb-8 border-b">
+      <div className="flex space-x-4 mb-8 border-b overflow-x-auto">
         <button
           onClick={() => setActiveTab('orders')}
-          className={`px-4 py-2 font-semibold transition ${
+          className={`px-4 py-2 font-semibold transition whitespace-nowrap ${
             activeTab === 'orders'
               ? 'text-[#FF6B35] border-b-2 border-[#FF6B35]'
               : 'text-gray-500 hover:text-[#FF6B35]'
           }`}
         >
-          📦 Orders ({openOrders.length})
+          📦 Orders
         </button>
-
         <button
           onClick={() => setActiveTab('menu')}
-          className={`px-4 py-2 font-semibold transition ${
+          className={`px-4 py-2 font-semibold transition whitespace-nowrap ${
             activeTab === 'menu'
               ? 'text-[#FF6B35] border-b-2 border-[#FF6B35]'
               : 'text-gray-500 hover:text-[#FF6B35]'
@@ -642,10 +705,9 @@ const RestaurantDashboard = () => {
         >
           📋 Menu
         </button>
-
         <button
           onClick={() => setActiveTab('earnings')}
-          className={`px-4 py-2 font-semibold transition ${
+          className={`px-4 py-2 font-semibold transition whitespace-nowrap ${
             activeTab === 'earnings'
               ? 'text-[#FF6B35] border-b-2 border-[#FF6B35]'
               : 'text-gray-500 hover:text-[#FF6B35]'
@@ -657,15 +719,16 @@ const RestaurantDashboard = () => {
 
       {activeTab === 'orders' && (
         <div className="space-y-8">
-          <div>
-            <div className="flex items-center justify-between mb-4 gap-4">
-              <h2 className="text-xl font-semibold text-[#2D3142]">Open Orders</h2>
-              <span className="text-sm text-gray-500">{openOrders.length} active</span>
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-[#2D3142]">Open Orders</h2>
+              <span className="px-3 py-1 rounded-full bg-yellow-50 text-yellow-700 text-sm font-semibold">
+                {openOrders.length}
+              </span>
             </div>
-
             {loadingOrders ? (
-              <div className="text-center py-12">
-                <div className="text-gray-500">Loading orders...</div>
+              <div className="text-center py-12 bg-gray-50 rounded-lg text-gray-500">
+                Loading orders...
               </div>
             ) : openOrders.length === 0 ? (
               <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -674,22 +737,47 @@ const RestaurantDashboard = () => {
             ) : (
               <div className="space-y-4">{openOrders.map(renderOrderCard)}</div>
             )}
-          </div>
+          </section>
 
-          <div>
-            <div className="flex items-center justify-between mb-4 gap-4">
-              <h2 className="text-xl font-semibold text-[#2D3142]">Completed / Ready Orders</h2>
-              <span className="text-sm text-gray-500">{completedOrders.length} total</span>
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-[#2D3142]">Ready / In Transit</h2>
+              <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-sm font-semibold">
+                {handoffOrders.length}
+              </span>
             </div>
+            {loadingOrders ? (
+              <div className="text-center py-12 bg-gray-50 rounded-lg text-gray-500">
+                Loading handoff orders...
+              </div>
+            ) : handoffOrders.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-lg">
+                <p className="text-gray-500">No ready or in-transit orders yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">{handoffOrders.map(renderOrderCard)}</div>
+            )}
+          </section>
 
-            {loadingOrders ? null : completedOrders.length === 0 ? (
-              <div className="text-center py-8 bg-gray-50 rounded-lg">
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-[#2D3142]">Completed / Cancelled</h2>
+              <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-sm font-semibold">
+                {completedOrders.length}
+              </span>
+            </div>
+            {loadingOrders ? (
+              <div className="text-center py-12 bg-gray-50 rounded-lg text-gray-500">
+                Loading completed orders...
+              </div>
+            ) : completedOrders.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-lg">
                 <p className="text-gray-500">No completed orders yet.</p>
               </div>
             ) : (
               <div className="space-y-4">{completedOrders.map(renderOrderCard)}</div>
             )}
-          </div>
+          </section>
         </div>
       )}
 
@@ -697,7 +785,6 @@ const RestaurantDashboard = () => {
         <div className="grid md:grid-cols-2 gap-8">
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Add Menu Item</h2>
-
             <form onSubmit={addMenuItem}>
               <input
                 type="text"
@@ -706,24 +793,20 @@ const RestaurantDashboard = () => {
                 onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
                 className="w-full p-2 border border-gray-300 rounded-lg mb-3"
               />
-
               <input
                 type="number"
-                step="0.01"
                 placeholder="Price"
                 value={newItem.price}
                 onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
                 className="w-full p-2 border border-gray-300 rounded-lg mb-3"
               />
-
               <input
                 type="text"
-                placeholder="Category (e.g., Appetizer, Main, Dessert)"
+                placeholder="Category"
                 value={newItem.category}
                 onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
                 className="w-full p-2 border border-gray-300 rounded-lg mb-3"
               />
-
               <textarea
                 placeholder="Description"
                 value={newItem.description}
@@ -731,7 +814,6 @@ const RestaurantDashboard = () => {
                 className="w-full p-2 border border-gray-300 rounded-lg mb-3"
                 rows={3}
               />
-
               <button
                 type="submit"
                 className="w-full bg-[#FF6B35] text-white py-2 rounded-lg font-semibold hover:bg-orange-600"
@@ -743,42 +825,24 @@ const RestaurantDashboard = () => {
 
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Current Menu</h2>
-
             {loadingMenu ? (
               <p className="text-gray-500 text-center py-8">Loading menu...</p>
             ) : menuItems.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                No menu items yet. Add your first item!
-              </p>
+              <p className="text-gray-500 text-center py-8">No menu items yet. Add your first item!</p>
             ) : (
               <div className="space-y-3">
-                {menuItems.map((item) => {
-                  const priceCents = getMenuItemPriceCents(item);
-
-                  return (
-                    <div
-                      key={item.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:border-[#FF6B35] transition"
-                    >
-                      <div className="flex justify-between items-start gap-4">
-                        <div>
-                          <h3 className="font-semibold text-[#2D3142]">{item.name}</h3>
-                          <p className="text-sm text-gray-500 mt-1">
-                            {item.description || 'No description'}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-2">
-                            {item.category || 'Uncategorized'}
-                          </p>
-                        </div>
-                        <p className="font-bold text-[#FF6B35]">
-                          {priceCents > 0
-                            ? formatCents(priceCents)
-                            : item.displayPrice || 'Unavailable'}
-                        </p>
+                {menuItems.map((item) => (
+                  <div key={item.id} className="border-b border-gray-200 pb-3">
+                    <div className="flex justify-between gap-4">
+                      <div>
+                        <h3 className="font-semibold">{item.name}</h3>
+                        <p className="text-sm text-gray-600">{item.description}</p>
+                        <p className="text-xs text-gray-500">{item.category}</p>
                       </div>
+                      <p className="text-[#FF6B35] font-semibold">{formatCents(getMenuItemPriceCents(item))}</p>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -786,30 +850,18 @@ const RestaurantDashboard = () => {
       )}
 
       {activeTab === 'earnings' && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-6">Earnings Overview</h2>
-
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
-              <p className="text-sm text-gray-500">Delivered Orders</p>
-              <p className="text-3xl font-bold text-[#2D3142] mt-2">
-                {deliveredOrders.length}
-              </p>
-            </div>
-
-            <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
-              <p className="text-sm text-gray-500">Total Revenue</p>
-              <p className="text-3xl font-bold text-[#FF6B35] mt-2">
-                {formatCents(deliveredRevenueCents)}
-              </p>
-            </div>
-
-            <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
-              <p className="text-sm text-gray-500">Average Order Value</p>
-              <p className="text-3xl font-bold text-[#2D3142] mt-2">
-                {formatCents(averageDeliveredOrderValueCents)}
-              </p>
-            </div>
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Delivered Orders</h2>
+            <p className="text-3xl font-bold text-[#2D3142] mt-3">{deliveredOrders.length}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Delivered Revenue</h2>
+            <p className="text-3xl font-bold text-[#FF6B35] mt-3">{formatCents(deliveredRevenueCents)}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Average Order Value</h2>
+            <p className="text-3xl font-bold text-[#2D3142] mt-3">{formatCents(averageDeliveredOrderValueCents)}</p>
           </div>
         </div>
       )}

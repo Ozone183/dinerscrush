@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   collection,
   doc,
@@ -17,6 +17,7 @@ type OrderStatus =
   | 'preparing'
   | 'ready'
   | 'picked_up'
+  | 'on_the_way'
   | 'delivered'
   | 'cancelled';
 
@@ -36,7 +37,11 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  restaurantId?: string | null;
+  restaurantDocId?: string | null;
   restaurantName?: string;
+  restaurantAddress?: string | null;
+  restaurantPhone?: string | null;
   customerName?: string;
   customerPhone?: string;
   customerAddress?: string;
@@ -46,15 +51,20 @@ interface Order {
   total?: number | string | null;
   totalAmount?: number | string | null;
   totalCents?: number | null;
-  subtotal?: number | string | null;
-  subtotalCents?: number | null;
   deliveryFee?: number | string | null;
+  deliveryFeeAmount?: number | string | null;
   deliveryFeeCents?: number | null;
+  driverPayout?: number | string | null;
+  driverPayoutAmount?: number | string | null;
+  driverPayoutCents?: number | null;
   status?: OrderStatus;
   driverId?: string | null;
   driverName?: string | null;
-  createdAt?: FirestoreTimestampLike;
-  assignedAt?: FirestoreTimestampLike;
+  createdAt?: FirestoreTimestampLike | Date | string | null;
+  assignedAt?: FirestoreTimestampLike | Date | string | null;
+  pickedUpAt?: FirestoreTimestampLike | Date | string | null;
+  onTheWayAt?: FirestoreTimestampLike | Date | string | null;
+  deliveredAt?: FirestoreTimestampLike | Date | string | null;
 }
 
 interface DriverProfile {
@@ -64,6 +74,17 @@ interface DriverProfile {
   rating: number;
   totalDeliveries: number;
 }
+
+interface RestaurantRecord {
+  id: string;
+  name?: string;
+  restaurantName?: string;
+  address?: string;
+  phone?: string;
+}
+
+const READY_STATUS: OrderStatus = 'ready';
+const DEFAULT_DRIVER_PAYOUT_CENTS = 500;
 
 const normalizeMoneyToCents = (value: unknown): number => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -124,12 +145,8 @@ const getItemPriceCents = (item: OrderItem): number => {
     if (item.price >= 100 && Number.isInteger(item.price)) return Math.round(item.price);
     return Math.round(item.price * 100);
   }
-  if (typeof item.displayPrice === 'string') {
-    return normalizeMoneyToCents(item.displayPrice);
-  }
-  if (typeof item.price === 'string') {
-    return normalizeMoneyToCents(item.price);
-  }
+  if (typeof item.displayPrice === 'string') return normalizeMoneyToCents(item.displayPrice);
+  if (typeof item.price === 'string') return normalizeMoneyToCents(item.price);
   return 0;
 };
 
@@ -155,8 +172,21 @@ const getOrderTotalCents = (order: Order): number => {
   }, 0);
 };
 
+const getDriverPayoutCents = (order: Order): number => {
+  const explicitPayout = normalizeMoneyToCents(order.driverPayoutCents ?? order.driverPayoutAmount ?? order.driverPayout);
+  if (explicitPayout > 0) return explicitPayout;
+
+  const deliveryFeePayout = normalizeMoneyToCents(order.deliveryFeeCents ?? order.deliveryFeeAmount ?? order.deliveryFee);
+  if (deliveryFeePayout > 0) return deliveryFeePayout;
+
+  return DEFAULT_DRIVER_PAYOUT_CENTS;
+};
+
 const getCustomerAddress = (order: Order): string =>
   order.customerAddress || order.deliveryAddress || order.address || 'No delivery address provided';
+
+const buildMapsUrl = (address: string): string =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 const getDriverDisplayName = (profile: DriverProfile, email: string | null | undefined): string => {
   if (profile.name.trim()) return profile.name.trim();
@@ -164,12 +194,54 @@ const getDriverDisplayName = (profile: DriverProfile, email: string | null | und
   return 'Crusher';
 };
 
-const isOpenDriverOrder = (status?: OrderStatus): boolean =>
-  status === 'ready' || status === 'picked_up' || status === 'confirmed' || status === 'preparing';
+const isActiveDriverStatus = (status?: OrderStatus): boolean =>
+  status === 'ready' || status === 'picked_up' || status === 'on_the_way';
+
+const getStatusLabel = (status?: OrderStatus): string => {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'confirmed':
+      return 'Confirmed';
+    case 'preparing':
+      return 'Preparing';
+    case 'ready':
+      return 'Ready for pickup';
+    case 'picked_up':
+      return 'Picked up';
+    case 'on_the_way':
+      return 'On the way';
+    case 'delivered':
+      return 'Delivered';
+    case 'cancelled':
+      return 'Cancelled';
+    default:
+      return 'Unknown';
+  }
+};
+
+const getStatusBadgeClass = (status?: OrderStatus): string => {
+  switch (status) {
+    case 'ready':
+      return 'bg-green-100 text-green-700';
+    case 'picked_up':
+      return 'bg-blue-100 text-blue-700';
+    case 'on_the_way':
+      return 'bg-orange-100 text-orange-700';
+    case 'delivered':
+      return 'bg-gray-100 text-gray-700';
+    case 'cancelled':
+      return 'bg-red-100 text-red-700';
+    default:
+      return 'bg-gray-100 text-gray-700';
+  }
+};
 
 const DriverDashboard = () => {
   const { currentUser, logout } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [restaurantsById, setRestaurantsById] = useState<Record<string, RestaurantRecord>>({});
+  const [restaurantsByName, setRestaurantsByName] = useState<Record<string, RestaurantRecord>>({});
   const [driverProfile, setDriverProfile] = useState<DriverProfile>({
     name: '',
     isAvailable: true,
@@ -179,8 +251,13 @@ const DriverDashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(
+    typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported'
+  );
   const [claimingOrderId, setClaimingOrderId] = useState<string | null>(null);
   const [releasingOrderId, setReleasingOrderId] = useState<string | null>(null);
+  const [statusActionOrderId, setStatusActionOrderId] = useState<string | null>(null);
+  const notifiedReadyOrderIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!currentUser) return;
@@ -209,24 +286,62 @@ const DriverDashboard = () => {
       setLoading(false);
     });
 
+    const unsubscribeRestaurants = onSnapshot(collection(db, 'restaurants'), (snapshot) => {
+      const byId: Record<string, RestaurantRecord> = {};
+      const byName: Record<string, RestaurantRecord> = {};
+
+      snapshot.docs.forEach((restaurantDoc) => {
+        const data = restaurantDoc.data() as RestaurantRecord;
+        const record: RestaurantRecord = { ...data, id: restaurantDoc.id };
+        byId[restaurantDoc.id] = record;
+        const nameKey = (data.name || data.restaurantName || '').trim().toLowerCase();
+        if (nameKey) byName[nameKey] = record;
+      });
+
+      setRestaurantsById(byId);
+      setRestaurantsByName(byName);
+    });
+
     return () => {
       unsubscribeUser();
       unsubscribeOrders();
+      unsubscribeRestaurants();
     };
   }, [currentUser]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    setNotificationPermission(window.Notification.permission);
+  }, []);
+
+  const requestBrowserNotifications = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      toast.error('Browser notifications are not supported here.');
+      return;
+    }
+
+    const permission = await window.Notification.requestPermission();
+    setNotificationPermission(permission);
+
+    if (permission === 'granted') {
+      toast.success('Browser alerts enabled for new crushes.');
+    } else {
+      toast.error('Browser alerts were blocked.');
+    }
+  };
 
   const activeOrder = useMemo(() => {
     if (!currentUser) return null;
     return (
       orders.find(
-        (order) => order.driverId === currentUser.uid && isOpenDriverOrder(order.status)
+        (order) => order.driverId === currentUser.uid && isActiveDriverStatus(order.status)
       ) ?? null
     );
   }, [orders, currentUser]);
 
   const availableOrders = useMemo(() => {
     return [...orders]
-      .filter((order) => order.status === 'ready' && !order.driverId)
+      .filter((order) => order.status === READY_STATUS && !order.driverId)
       .sort((a, b) => getTimestampMs(a.createdAt) - getTimestampMs(b.createdAt));
   }, [orders]);
 
@@ -243,23 +358,94 @@ const DriverDashboard = () => {
     const today = new Date();
     return historyOrders.filter((order) => {
       if (order.status !== 'delivered') return false;
-      const ms = getTimestampMs(order.createdAt);
+      const ms = getTimestampMs(order.deliveredAt || order.createdAt);
       if (!ms) return false;
-      const orderDate = new Date(ms);
+      const deliveredDate = new Date(ms);
       return (
-        orderDate.getFullYear() === today.getFullYear() &&
-        orderDate.getMonth() === today.getMonth() &&
-        orderDate.getDate() === today.getDate()
+        deliveredDate.getFullYear() === today.getFullYear() &&
+        deliveredDate.getMonth() === today.getMonth() &&
+        deliveredDate.getDate() === today.getDate()
       );
     }).length;
+  }, [historyOrders]);
+
+  const todayDriverPayoutCents = useMemo(() => {
+    const today = new Date();
+    return historyOrders.reduce((sum, order) => {
+      if (order.status !== 'delivered') return sum;
+      const ms = getTimestampMs(order.deliveredAt || order.createdAt);
+      if (!ms) return sum;
+      const deliveredDate = new Date(ms);
+      const isToday =
+        deliveredDate.getFullYear() === today.getFullYear() &&
+        deliveredDate.getMonth() === today.getMonth() &&
+        deliveredDate.getDate() === today.getDate();
+      return isToday ? sum + getDriverPayoutCents(order) : sum;
+    }, 0);
   }, [historyOrders]);
 
   const assignedOpenCount = useMemo(() => {
     if (!currentUser) return 0;
     return orders.filter(
-      (order) => order.driverId === currentUser.uid && isOpenDriverOrder(order.status)
+      (order) => order.driverId === currentUser.uid && isActiveDriverStatus(order.status)
     ).length;
   }, [orders, currentUser]);
+
+  const getRestaurantRecord = (order: Order): RestaurantRecord | null => {
+    if (order.restaurantDocId && restaurantsById[order.restaurantDocId]) {
+      return restaurantsById[order.restaurantDocId];
+    }
+    if (order.restaurantId && restaurantsById[order.restaurantId]) {
+      return restaurantsById[order.restaurantId];
+    }
+    const nameKey = (order.restaurantName || '').trim().toLowerCase();
+    if (nameKey && restaurantsByName[nameKey]) {
+      return restaurantsByName[nameKey];
+    }
+    return null;
+  };
+
+  const getRestaurantAddress = (order: Order): string => {
+    const inlineAddress = (order.restaurantAddress || '').trim();
+    if (inlineAddress) return inlineAddress;
+    return getRestaurantRecord(order)?.address?.trim() || 'Restaurant address unavailable';
+  };
+
+  const getRestaurantPhone = (order: Order): string => {
+    const inlinePhone = (order.restaurantPhone || '').trim();
+    if (inlinePhone) return inlinePhone;
+    return getRestaurantRecord(order)?.phone?.trim() || '';
+  };
+
+  useEffect(() => {
+    if (!driverProfile.isAvailable) {
+      notifiedReadyOrderIdsRef.current = new Set(availableOrders.map((order) => order.id));
+      return;
+    }
+
+    const previousIds = notifiedReadyOrderIdsRef.current;
+    const nextIds = new Set(availableOrders.map((order) => order.id));
+    const newlyAvailable = availableOrders.filter((order) => !previousIds.has(order.id));
+
+    if (newlyAvailable.length > 0) {
+      const latestOrder = newlyAvailable[0];
+      const restaurantName = latestOrder.restaurantName || 'A restaurant';
+      toast.success(`New crush ready from ${restaurantName}`);
+
+      if (
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        notificationPermission === 'granted' &&
+        document.visibilityState !== 'visible'
+      ) {
+        new window.Notification('New crush ready', {
+          body: `${restaurantName} has an order ready for pickup.`,
+        });
+      }
+    }
+
+    notifiedReadyOrderIdsRef.current = nextIds;
+  }, [availableOrders, driverProfile.isAvailable, notificationPermission]);
 
   const toggleAvailability = async () => {
     if (!currentUser || availabilitySaving) return;
@@ -313,7 +499,7 @@ const DriverDashboard = () => {
         }
 
         const orderData = orderSnap.data() as DocumentData;
-        if (orderData.status !== 'ready') {
+        if (orderData.status !== READY_STATUS) {
           throw new Error('This order is no longer ready for pickup.');
         }
         if (orderData.driverId && orderData.driverId !== currentUser.uid) {
@@ -333,6 +519,7 @@ const DriverDashboard = () => {
             driverId: currentUser.uid,
             driverName,
             assignedAt: new Date(),
+            updatedAt: new Date(),
           },
           { merge: true }
         );
@@ -348,7 +535,7 @@ const DriverDashboard = () => {
         );
       });
 
-      toast.success('Crush accepted. It is now assigned to you.');
+      toast.success('Crush accepted. Navigate to the restaurant for pickup.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to accept order.');
     } finally {
@@ -374,8 +561,8 @@ const DriverDashboard = () => {
         if (orderData.driverId !== currentUser.uid) {
           throw new Error('This crush is no longer assigned to you.');
         }
-        if (orderData.status === 'delivered' || orderData.status === 'cancelled') {
-          throw new Error('Completed crushes cannot be released.');
+        if (orderData.status !== READY_STATUS) {
+          throw new Error('You can only release a crush before pickup.');
         }
 
         transaction.set(
@@ -384,6 +571,7 @@ const DriverDashboard = () => {
             driverId: null,
             driverName: null,
             assignedAt: null,
+            updatedAt: new Date(),
           },
           { merge: true }
         );
@@ -405,6 +593,94 @@ const DriverDashboard = () => {
     }
   };
 
+  const updateDriverOrderStatus = async (orderId: string, nextStatus: OrderStatus) => {
+    if (!currentUser) return;
+
+    setStatusActionOrderId(orderId);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const orderRef = doc(db, 'orders', orderId);
+        const userRef = doc(db, 'users', currentUser.uid);
+        const [orderSnap, userSnap] = await Promise.all([
+          transaction.get(orderRef),
+          transaction.get(userRef),
+        ]);
+
+        if (!orderSnap.exists()) {
+          throw new Error('This order no longer exists.');
+        }
+
+        const orderData = orderSnap.data() as DocumentData;
+        if (orderData.driverId !== currentUser.uid) {
+          throw new Error('This crush is not assigned to you.');
+        }
+
+        const currentStatus = orderData.status as OrderStatus | undefined;
+        const patch: Record<string, unknown> = {
+          status: nextStatus,
+          updatedAt: new Date(),
+        };
+
+        if (nextStatus === 'picked_up') {
+          if (currentStatus !== 'ready') {
+            throw new Error('Pickup can only happen after the order is ready.');
+          }
+          patch.pickedUpAt = new Date();
+        }
+
+        if (nextStatus === 'on_the_way') {
+          if (currentStatus !== 'picked_up') {
+            throw new Error('Mark pickup first before going on the way.');
+          }
+          patch.onTheWayAt = new Date();
+        }
+
+        if (nextStatus === 'delivered') {
+          if (currentStatus !== 'on_the_way' && currentStatus !== 'picked_up') {
+            throw new Error('You can only mark delivered after pickup.');
+          }
+          patch.deliveredAt = new Date();
+        }
+
+        transaction.set(orderRef, patch, { merge: true });
+
+        const userPatch: Record<string, unknown> = {};
+        if (nextStatus === 'delivered') {
+          userPatch.currentOrderId = null;
+          userPatch.totalDeliveries = (typeof userSnap.data()?.totalDeliveries === 'number'
+            ? userSnap.data()?.totalDeliveries
+            : 0) + 1;
+        }
+
+        if (Object.keys(userPatch).length > 0) {
+          transaction.set(userRef, userPatch, { merge: true });
+        }
+      });
+
+      if (nextStatus === 'picked_up') toast.success('Picked up. Head to the customer now.');
+      if (nextStatus === 'on_the_way') toast.success('Customer notified: order is on the way.');
+      if (nextStatus === 'delivered') toast.success('Delivery completed successfully.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update delivery status.');
+    } finally {
+      setStatusActionOrderId(null);
+    }
+  };
+
+  const renderNavigateButton = (label: string, address: string, className: string) => {
+    if (!address || address.toLowerCase().includes('unavailable')) return null;
+    return (
+      <a
+        href={buildMapsUrl(address)}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+      >
+        {label}
+      </a>
+    );
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <Toaster position="top-center" />
@@ -413,15 +689,25 @@ const DriverDashboard = () => {
         <div>
           <h1 className="text-3xl font-bold text-[#2D3142]">⚡ Crusher Hub</h1>
           <p className="text-gray-600 mt-1">
-            Claim ready orders, manage your active crush, and stay synced in real time.
+            Claim ready orders, drive to pickup, head to the crush, and close out delivery live.
           </p>
         </div>
-        <button
-          onClick={logout}
-          className="text-gray-500 hover:text-red-500 transition text-sm self-start sm:self-auto"
-        >
-          🚪 Sign Out
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
+            <button
+              onClick={requestBrowserNotifications}
+              className="px-4 py-2 rounded-xl border border-[#FF6B35] text-[#FF6B35] font-semibold hover:bg-orange-50 transition"
+            >
+              Enable Alerts
+            </button>
+          )}
+          <button
+            onClick={logout}
+            className="text-gray-500 hover:text-red-500 transition text-sm self-start sm:self-auto"
+          >
+            🚪 Sign Out
+          </button>
+        </div>
       </div>
 
       <div className="bg-gradient-to-r from-[#FF6B35] to-orange-500 rounded-2xl p-6 mb-8 text-white shadow-sm">
@@ -433,7 +719,7 @@ const DriverDashboard = () => {
             </p>
             <p className="text-sm opacity-80 mt-1">
               {driverProfile.isAvailable
-                ? 'You can now see and accept ready deliveries.'
+                ? 'Ready orders will appear here in real time.'
                 : 'Go online to receive available crushes.'}
             </p>
           </div>
@@ -466,11 +752,11 @@ const DriverDashboard = () => {
         </div>
         <div className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
           <p className="text-2xl font-bold text-[#2D3142]">{todayDeliveredCount}</p>
-          <p className="text-xs text-gray-500 mt-1">Delivered Today</p>
+          <p className="text-xs text-gray-500 mt-1">Crushed Today</p>
         </div>
         <div className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
-          <p className="text-2xl font-bold text-[#2D3142]">{driverProfile.rating.toFixed(1)}</p>
-          <p className="text-xs text-gray-500 mt-1">Crusher Rating ★</p>
+          <p className="text-2xl font-bold text-[#2D3142]">{formatCents(todayDriverPayoutCents)}</p>
+          <p className="text-xs text-gray-500 mt-1">Today's Payout</p>
         </div>
       </div>
 
@@ -479,8 +765,8 @@ const DriverDashboard = () => {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-[#2D3142]">🛵 My Active Crush</h2>
             {activeOrder && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
-                Assigned
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(activeOrder.status)}`}>
+                {getStatusLabel(activeOrder.status)}
               </span>
             )}
           </div>
@@ -493,19 +779,51 @@ const DriverDashboard = () => {
                 <div>
                   <p className="text-xl font-bold text-[#2D3142]">{activeOrder.restaurantName || 'Restaurant order'}</p>
                   <p className="text-sm text-gray-600 mt-1">For {activeOrder.customerName || 'Customer'}</p>
+                  {activeOrder.driverName && (
+                    <p className="text-xs text-gray-500 mt-1">Assigned to {activeOrder.driverName}</p>
+                  )}
                 </div>
                 <div className="text-left sm:text-right">
-                  <p className="text-sm text-gray-500">Order total</p>
+                  <p className="text-sm text-gray-500">Customer Total</p>
                   <p className="text-lg font-bold text-[#FF6B35]">{formatCents(getOrderTotalCents(activeOrder))}</p>
+                  <p className="text-sm text-gray-500 mt-2">Crusher Payout</p>
+                  <p className="text-base font-bold text-[#2D3142]">{formatCents(getDriverPayoutCents(activeOrder))}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 text-sm text-gray-700">
+                <div className="rounded-xl bg-white border border-gray-100 p-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Pickup</p>
+                  <p className="font-semibold text-[#2D3142] mt-1">{activeOrder.restaurantName || 'Restaurant'}</p>
+                  <p className="mt-1">{getRestaurantAddress(activeOrder)}</p>
+                  {getRestaurantPhone(activeOrder) && <p className="mt-1">📞 {getRestaurantPhone(activeOrder)}</p>}
+                  <div className="mt-3">
+                    {renderNavigateButton(
+                      'Navigate to Restaurant',
+                      getRestaurantAddress(activeOrder),
+                      'inline-flex px-4 py-2 rounded-xl bg-[#2D3142] text-white font-semibold hover:bg-gray-800 transition'
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-white border border-gray-100 p-4">
+                  <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Dropoff</p>
+                  <p className="font-semibold text-[#2D3142] mt-1">{activeOrder.customerName || 'Customer'}</p>
+                  <p className="mt-1">{getCustomerAddress(activeOrder)}</p>
+                  {activeOrder.customerPhone && <p className="mt-1">📞 {activeOrder.customerPhone}</p>}
                 </div>
               </div>
 
               <div className="mt-4 space-y-2 text-sm text-gray-700">
-                <p><span className="font-semibold text-[#2D3142]">Address:</span> {getCustomerAddress(activeOrder)}</p>
-                {activeOrder.customerPhone && (
-                  <p><span className="font-semibold text-[#2D3142]">Phone:</span> {activeOrder.customerPhone}</p>
-                )}
                 <p><span className="font-semibold text-[#2D3142]">Placed:</span> {formatDateTime(activeOrder.createdAt)}</p>
+                {activeOrder.assignedAt && (
+                  <p><span className="font-semibold text-[#2D3142]">Accepted:</span> {formatDateTime(activeOrder.assignedAt)}</p>
+                )}
+                {activeOrder.pickedUpAt && (
+                  <p><span className="font-semibold text-[#2D3142]">Picked Up:</span> {formatDateTime(activeOrder.pickedUpAt)}</p>
+                )}
+                {activeOrder.onTheWayAt && (
+                  <p><span className="font-semibold text-[#2D3142]">On the Way:</span> {formatDateTime(activeOrder.onTheWayAt)}</p>
+                )}
               </div>
 
               <div className="mt-4">
@@ -528,16 +846,58 @@ const DriverDashboard = () => {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  onClick={() => releaseOrder(activeOrder.id)}
-                  disabled={releasingOrderId === activeOrder.id}
-                  className="px-4 py-2 rounded-xl border border-red-200 text-red-600 font-semibold hover:bg-red-50 transition disabled:opacity-60"
-                >
-                  {releasingOrderId === activeOrder.id ? 'Releasing...' : 'Release Order'}
-                </button>
-                <p className="text-xs text-gray-500 self-center">
-                  Next step after this: add pickup and delivered driver actions.
-                </p>
+                {activeOrder.status === 'ready' && (
+                  <>
+                    <button
+                      onClick={() => updateDriverOrderStatus(activeOrder.id, 'picked_up')}
+                      disabled={statusActionOrderId === activeOrder.id}
+                      className="px-4 py-2 rounded-xl bg-[#FF6B35] text-white font-semibold hover:bg-orange-600 transition disabled:opacity-60"
+                    >
+                      {statusActionOrderId === activeOrder.id ? 'Saving...' : 'Mark Picked Up'}
+                    </button>
+                    <button
+                      onClick={() => releaseOrder(activeOrder.id)}
+                      disabled={releasingOrderId === activeOrder.id}
+                      className="px-4 py-2 rounded-xl border border-red-200 text-red-600 font-semibold hover:bg-red-50 transition disabled:opacity-60"
+                    >
+                      {releasingOrderId === activeOrder.id ? 'Releasing...' : 'Release Order'}
+                    </button>
+                  </>
+                )}
+
+                {activeOrder.status === 'picked_up' && (
+                  <>
+                    {renderNavigateButton(
+                      'Navigate to Customer',
+                      getCustomerAddress(activeOrder),
+                      'px-4 py-2 rounded-xl bg-[#2D3142] text-white font-semibold hover:bg-gray-800 transition'
+                    )}
+                    <button
+                      onClick={() => updateDriverOrderStatus(activeOrder.id, 'on_the_way')}
+                      disabled={statusActionOrderId === activeOrder.id}
+                      className="px-4 py-2 rounded-xl bg-[#FF6B35] text-white font-semibold hover:bg-orange-600 transition disabled:opacity-60"
+                    >
+                      {statusActionOrderId === activeOrder.id ? 'Saving...' : 'Mark On the Way'}
+                    </button>
+                  </>
+                )}
+
+                {activeOrder.status === 'on_the_way' && (
+                  <>
+                    {renderNavigateButton(
+                      'Open Customer Route',
+                      getCustomerAddress(activeOrder),
+                      'px-4 py-2 rounded-xl bg-[#2D3142] text-white font-semibold hover:bg-gray-800 transition'
+                    )}
+                    <button
+                      onClick={() => updateDriverOrderStatus(activeOrder.id, 'delivered')}
+                      disabled={statusActionOrderId === activeOrder.id}
+                      className="px-4 py-2 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-60"
+                    >
+                      {statusActionOrderId === activeOrder.id ? 'Saving...' : 'Mark Delivered'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -584,16 +944,19 @@ const DriverDashboard = () => {
                     <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                       <div>
                         <p className="text-xl font-bold text-[#2D3142]">{order.restaurantName || 'Restaurant order'}</p>
-                        <p className="text-sm text-gray-600 mt-1">Customer: {order.customerName || 'Customer'}</p>
-                        <p className="text-sm text-gray-500 mt-2">📍 {getCustomerAddress(order)}</p>
+                        <p className="text-sm text-gray-500 mt-1">Pickup: {getRestaurantAddress(order)}</p>
+                        <p className="text-sm text-gray-600 mt-2">Customer: {order.customerName || 'Customer'}</p>
+                        <p className="text-sm text-gray-500 mt-1">Dropoff: {getCustomerAddress(order)}</p>
                         {order.customerPhone && (
                           <p className="text-sm text-gray-500 mt-1">📞 {order.customerPhone}</p>
                         )}
                       </div>
 
-                      <div className="text-left md:text-right min-w-[140px]">
-                        <p className="text-sm text-gray-500">Order total</p>
+                      <div className="text-left md:text-right min-w-[160px]">
+                        <p className="text-sm text-gray-500">Customer Total</p>
                         <p className="text-xl font-bold text-[#FF6B35]">{formatCents(getOrderTotalCents(order))}</p>
+                        <p className="text-sm text-gray-500 mt-2">Crusher Payout</p>
+                        <p className="text-base font-bold text-[#2D3142]">{formatCents(getDriverPayoutCents(order))}</p>
                         <p className="text-xs text-gray-500 mt-2">Placed {formatDateTime(order.createdAt)}</p>
                       </div>
                     </div>
@@ -626,7 +989,12 @@ const DriverDashboard = () => {
                       )}
                     </div>
 
-                    <div className="mt-5 flex justify-end">
+                    <div className="mt-5 flex flex-wrap justify-end gap-3">
+                      {renderNavigateButton(
+                        'Navigate to Restaurant',
+                        getRestaurantAddress(order),
+                        'px-5 py-2.5 rounded-xl border border-gray-200 text-[#2D3142] font-semibold hover:bg-white transition'
+                      )}
                       <button
                         onClick={() => acceptOrder(order.id)}
                         disabled={claimingOrderId === order.id || !!activeOrder}
@@ -672,17 +1040,11 @@ const DriverDashboard = () => {
                 <div>
                   <p className="font-semibold text-[#2D3142]">{order.restaurantName || 'Restaurant order'}</p>
                   <p className="text-sm text-gray-500">{order.customerName || 'Customer'}</p>
-                  <p className="text-xs text-gray-400 mt-1">{formatDateTime(order.createdAt)}</p>
+                  <p className="text-xs text-gray-400 mt-1">{formatDateTime(order.deliveredAt || order.createdAt)}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span
-                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                      order.status === 'delivered'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}
-                  >
-                    {order.status === 'delivered' ? 'Delivered' : 'Cancelled'}
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(order.status)}`}>
+                    {getStatusLabel(order.status)}
                   </span>
                   <p className="font-bold text-[#FF6B35]">{formatCents(getOrderTotalCents(order))}</p>
                 </div>

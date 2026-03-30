@@ -8,12 +8,15 @@ type OrderStatus =
   | 'confirmed'
   | 'preparing'
   | 'ready'
+  | 'picked_up'
+  | 'on_the_way'
   | 'delivered'
   | 'cancelled';
 
 interface FirestoreTimestampLike {
   seconds?: number;
   nanoseconds?: number;
+  toDate?: () => Date;
 }
 
 interface OrderItem {
@@ -35,6 +38,8 @@ interface Order {
   customerAddress?: string;
   customerEmail?: string | null;
   orderInstructions?: string;
+  driverName?: string | null;
+  driverId?: string | null;
   items: OrderItem[];
   subtotalAmount?: number;
   subtotalCents?: number;
@@ -44,6 +49,10 @@ interface Order {
   totalCents?: number;
   status: OrderStatus;
   createdAt?: FirestoreTimestampLike | null;
+  assignedAt?: FirestoreTimestampLike | null;
+  pickedUpAt?: FirestoreTimestampLike | null;
+  onTheWayAt?: FirestoreTimestampLike | null;
+  deliveredAt?: FirestoreTimestampLike | null;
 }
 
 const STATUS_STEPS: OrderStatus[] = [
@@ -51,6 +60,8 @@ const STATUS_STEPS: OrderStatus[] = [
   'confirmed',
   'preparing',
   'ready',
+  'picked_up',
+  'on_the_way',
   'delivered',
 ];
 
@@ -78,15 +89,27 @@ const STATUS_META: Record<
   },
   ready: {
     label: 'Ready',
-    description: 'Your order is ready for pickup/delivery.',
+    description: 'Your order is packed and ready for pickup.',
     badgeClass: 'bg-green-100 text-green-800',
     icon: '🎉',
+  },
+  picked_up: {
+    label: 'Picked Up',
+    description: 'Your crusher has collected the order from the restaurant.',
+    badgeClass: 'bg-sky-100 text-sky-800',
+    icon: '🛵',
+  },
+  on_the_way: {
+    label: 'On the Way',
+    description: 'Your crusher is heading to your address now.',
+    badgeClass: 'bg-orange-100 text-orange-800',
+    icon: '🚗',
   },
   delivered: {
     label: 'Delivered',
     description: 'Your order has been completed.',
     badgeClass: 'bg-gray-100 text-gray-800',
-    icon: '🚚',
+    icon: '📦',
   },
   cancelled: {
     label: 'Cancelled',
@@ -147,6 +170,46 @@ const getOrderTotalCents = (order: Order) => {
     (sum, item) => sum + getItemPriceCents(item) * item.quantity,
     0
   );
+};
+
+const getTimestampMs = (value: FirestoreTimestampLike | Date | string | null | undefined): number => {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  if (typeof value.toDate === 'function') return value.toDate().getTime();
+  if (typeof value.seconds === 'number') return value.seconds * 1000;
+  return 0;
+};
+
+const formatDateTime = (value: FirestoreTimestampLike | Date | string | null | undefined): string => {
+  const ms = getTimestampMs(value);
+  if (!ms) return 'Just now';
+  return new Date(ms).toLocaleString();
+};
+
+const getDriverJourneyMessage = (order: Order): string | null => {
+  if (!order.driverName && !order.driverId) return null;
+
+  if (order.status === 'ready') {
+    return `${order.driverName || 'Your crusher'} has accepted the order and is heading to the restaurant for pickup.`;
+  }
+
+  if (order.status === 'picked_up') {
+    return `${order.driverName || 'Your crusher'} has picked up the order.`;
+  }
+
+  if (order.status === 'on_the_way') {
+    return `${order.driverName || 'Your crusher'} is on the way to your address.`;
+  }
+
+  if (order.status === 'delivered') {
+    return `${order.driverName || 'Your crusher'} completed the delivery.`;
+  }
+
+  return `${order.driverName || 'Your crusher'} is assigned to this order.`;
 };
 
 const TrackOrder = () => {
@@ -229,6 +292,7 @@ const TrackOrder = () => {
   }
 
   const totalCents = getOrderTotalCents(order);
+  const driverJourneyMessage = getDriverJourneyMessage(order);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6">
@@ -253,6 +317,12 @@ const TrackOrder = () => {
         </div>
 
         <p className="text-sm text-gray-500 mt-3">{currentMeta.description}</p>
+
+        {driverJourneyMessage && (
+          <div className="mt-4 rounded-xl border border-orange-100 bg-orange-50 px-4 py-3">
+            <p className="text-sm font-medium text-orange-700">{driverJourneyMessage}</p>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
@@ -302,6 +372,17 @@ const TrackOrder = () => {
             })}
           </div>
         )}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+        <h2 className="text-lg font-bold text-[#2D3142] mb-4">Timeline</h2>
+        <div className="space-y-3 text-sm text-gray-700">
+          <p><span className="font-semibold text-[#2D3142]">Placed:</span> {formatDateTime(order.createdAt)}</p>
+          {order.assignedAt && <p><span className="font-semibold text-[#2D3142]">Crusher accepted:</span> {formatDateTime(order.assignedAt)}</p>}
+          {order.pickedUpAt && <p><span className="font-semibold text-[#2D3142]">Picked up:</span> {formatDateTime(order.pickedUpAt)}</p>}
+          {order.onTheWayAt && <p><span className="font-semibold text-[#2D3142]">On the way:</span> {formatDateTime(order.onTheWayAt)}</p>}
+          {order.deliveredAt && <p><span className="font-semibold text-[#2D3142]">Delivered:</span> {formatDateTime(order.deliveredAt)}</p>}
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
@@ -359,6 +440,9 @@ const TrackOrder = () => {
         {order.customerName && <p className="text-gray-700">{order.customerName}</p>}
         {order.customerPhone && <p className="text-gray-700">{order.customerPhone}</p>}
         {order.customerAddress && <p className="text-gray-700">{order.customerAddress}</p>}
+        {order.driverName && (
+          <p className="text-gray-700 mt-3">Crusher: {order.driverName}</p>
+        )}
       </div>
     </div>
   );
