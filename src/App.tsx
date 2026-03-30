@@ -9,6 +9,7 @@ import RestaurantDashboard from './pages/RestaurantDashboard';
 import DriverDashboard from './pages/DriverDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import RestaurantMenu from './pages/RestaurantMenu';
+import TrackOrder from './pages/TrackOrder';
 
 // Protected Route Component
 const ProtectedRoute = ({ children, allowedRole }: { children: React.ReactNode, allowedRole?: string }) => {
@@ -41,6 +42,7 @@ function App() {
           <Route path="/signup" element={<SignUp />} />
           <Route path="/order" element={<CustomerOrder />} />
           <Route path="/restaurant/:id" element={<RestaurantMenu />} />
+          <Route path="/track-order/:orderId" element={<TrackOrder />} />
           
           {/* Protected routes */}
           <Route path="/restaurant-dashboard" element={

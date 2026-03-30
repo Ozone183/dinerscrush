@@ -9,7 +9,6 @@ interface Restaurant {
   address?: string;
   phone?: string;
   cuisine?: string;
-  role?: string;
 }
 
 const CustomerOrder = () => {
@@ -22,16 +21,38 @@ const CustomerOrder = () => {
 
   const fetchAllRestaurants = async () => {
     try {
-      const allRestaurants: Restaurant[] = [];
-      
-      // 1. Fetch from 'users' collection where role is 'restaurant'
+      const normalizedRestaurants: Restaurant[] = [];
+
+      // Prefer the new architecture first
+      const restaurantsRef = collection(db, 'restaurants');
+      const restaurantsSnapshot = await getDocs(restaurantsRef);
+
+      if (!restaurantsSnapshot.empty) {
+        restaurantsSnapshot.docs.forEach((doc) => {
+          const data = doc.data();
+          normalizedRestaurants.push({
+            id: doc.id,
+            name: data.name || data.restaurantName || 'Unnamed Restaurant',
+            address: data.address,
+            phone: data.phone,
+            cuisine: data.cuisine,
+          });
+        });
+
+        setRestaurants(
+          normalizedRestaurants.sort((a, b) => a.name.localeCompare(b.name))
+        );
+        return;
+      }
+
+      // Fallback to older users-based restaurant records if needed
       const usersRef = collection(db, 'users');
       const usersQuery = query(usersRef, where('role', '==', 'restaurant'));
       const usersSnapshot = await getDocs(usersQuery);
-      
-      usersSnapshot.docs.forEach(doc => {
+
+      usersSnapshot.docs.forEach((doc) => {
         const data = doc.data();
-        allRestaurants.push({
+        normalizedRestaurants.push({
           id: doc.id,
           name: data.name || 'Unnamed Restaurant',
           address: data.address,
@@ -39,31 +60,10 @@ const CustomerOrder = () => {
           cuisine: data.cuisine,
         });
       });
-      
-      // 2. Also fetch from 'restaurants' collection if it exists
-      try {
-        const restaurantsRef = collection(db, 'restaurants');
-        const restaurantsSnapshot = await getDocs(restaurantsRef);
-        
-        restaurantsSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          // Avoid duplicates by checking if name already exists
-          const exists = allRestaurants.some(r => r.name === (data.name || data.restaurantName));
-          if (!exists) {
-            allRestaurants.push({
-              id: doc.id,
-              name: data.name || data.restaurantName || 'Unnamed Restaurant',
-              address: data.address,
-              phone: data.phone,
-              cuisine: data.cuisine,
-            });
-          }
-        });
-      } catch (err) {
-        console.log('No separate restaurants collection, continuing...');
-      }
-      
-      setRestaurants(allRestaurants);
+
+      setRestaurants(
+        normalizedRestaurants.sort((a, b) => a.name.localeCompare(b.name))
+      );
     } catch (error) {
       console.error('Error fetching restaurants:', error);
     } finally {
@@ -83,17 +83,22 @@ const CustomerOrder = () => {
     <div className="max-w-7xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-[#2D3142]">🍽️ Find Your Crush</h1>
       <p className="text-gray-600 mt-1 mb-6">Discover the best Crush Kitchens near you</p>
-      
+
       {restaurants.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border border-gray-100">
           <p className="text-gray-400">No Crush Kitchens yet</p>
           <p className="text-sm text-gray-400 mt-2">Be the first to partner with us!</p>
-          <Link to="/signup" className="text-[#FF6B35] mt-4 inline-block">Partner Your Kitchen →</Link>
+          <Link to="/signup" className="text-[#FF6B35] mt-4 inline-block">
+            Partner Your Kitchen →
+          </Link>
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
           {restaurants.map((restaurant) => (
-            <div key={restaurant.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition">
+            <div
+              key={restaurant.id}
+              className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition"
+            >
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-semibold text-lg text-[#2D3142]">{restaurant.name}</h3>
@@ -109,7 +114,8 @@ const CustomerOrder = () => {
                   <div className="text-xs text-gray-400">15-25 min</div>
                 </div>
               </div>
-              <Link 
+
+              <Link
                 to={`/restaurant/${restaurant.id}`}
                 className="mt-4 w-full bg-[#FF6B35] text-white py-2 rounded-lg font-semibold text-center hover:bg-orange-600 transition block"
               >
@@ -119,9 +125,14 @@ const CustomerOrder = () => {
           ))}
         </div>
       )}
-      
+
       <div className="mt-12 text-center">
-        <p className="text-gray-500">More restaurants coming soon. <Link to="/signup" className="text-[#FF6B35]">Are you a restaurant? Partner with us →</Link></p>
+        <p className="text-gray-500">
+          More restaurants coming soon.{' '}
+          <Link to="/signup" className="text-[#FF6B35]">
+            Are you a restaurant? Partner with us →
+          </Link>
+        </p>
       </div>
     </div>
   );
