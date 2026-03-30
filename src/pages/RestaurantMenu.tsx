@@ -42,6 +42,8 @@ interface MenuItem {
 }
 
 const OPEN_SCROLL_THRESHOLD = 420;
+const DEFAULT_DRIVER_BASE_PAYOUT_CENTS = 500;
+const TIP_PRESET_OPTIONS = [0, 200, 500, 1000];
 
 const CHECKOUT_PREFILL_KEY = 'dinerscrush_checkout_prefill_v1';
 
@@ -262,6 +264,9 @@ const RestaurantMenu = () => {
   const [reviewMode, setReviewMode] = useState(false);
 
   const [checkoutForm, setCheckoutForm] = useState(getInitialCheckoutForm);
+  const [selectedTipPresetCents, setSelectedTipPresetCents] = useState(500);
+  const [customTipInput, setCustomTipInput] = useState('');
+  const [isCustomTip, setIsCustomTip] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -481,6 +486,17 @@ const RestaurantMenu = () => {
     [currentRestaurantCartItems]
   );
 
+  const deliveryFeeCents = 0;
+
+  const resolvedTipCents = useMemo(() => {
+    if (!isCustomTip) return selectedTipPresetCents;
+    return Math.max(0, normalizeMoneyToCents(customTipInput));
+  }, [customTipInput, isCustomTip, selectedTipPresetCents]);
+
+  const baseDriverPayoutCents = DEFAULT_DRIVER_BASE_PAYOUT_CENTS;
+  const estimatedCrusherEarningsCents = baseDriverPayoutCents + resolvedTipCents;
+  const customerTotalCents = currentRestaurantSubtotal + deliveryFeeCents + resolvedTipCents;
+
   useEffect(() => {
     if (currentRestaurantCartItems.length === 0) {
       setReviewMode(false);
@@ -555,13 +571,16 @@ const RestaurantMenu = () => {
       setSubmittingOrder(true);
 
       const subtotalCents = currentRestaurantSubtotal;
-      const deliveryFeeCents = 0;
-      const totalCents = subtotalCents + deliveryFeeCents;
+      const tipCents = resolvedTipCents;
+      const totalCents = subtotalCents + deliveryFeeCents + tipCents;
+      const driverPayoutCents = baseDriverPayoutCents + tipCents;
 
       const orderPayload = {
         restaurantId: restaurant.orderTargetId,
         restaurantDocId: restaurant.id,
         restaurantName: restaurant.name,
+        restaurantAddress: restaurant.address || '',
+        restaurantPhone: restaurant.phone || '',
         restaurantLookupIds: restaurant.menuLookupIds,
         customerId: currentUser?.uid || null,
         customerEmail: currentUser?.email || null,
@@ -581,10 +600,16 @@ const RestaurantMenu = () => {
         })),
         subtotalAmount: Number((subtotalCents / 100).toFixed(2)),
         subtotalCents,
-        deliveryFeeAmount: 0,
+        deliveryFeeAmount: Number((deliveryFeeCents / 100).toFixed(2)),
         deliveryFeeCents,
+        tipAmount: Number((tipCents / 100).toFixed(2)),
+        tipCents,
         totalAmount: Number((totalCents / 100).toFixed(2)),
         totalCents,
+        baseDriverPayoutAmount: Number((baseDriverPayoutCents / 100).toFixed(2)),
+        baseDriverPayoutCents,
+        driverPayoutAmount: Number((driverPayoutCents / 100).toFixed(2)),
+        driverPayoutCents,
         paymentStatus: 'pending',
         status: 'pending',
         createdAt: serverTimestamp(),
@@ -600,6 +625,9 @@ const RestaurantMenu = () => {
         ...prev,
         orderInstructions: '',
       }));
+      setSelectedTipPresetCents(500);
+      setCustomTipInput('');
+      setIsCustomTip(false);
 
       window.location.assign(`/track-order/${docRef.id}`);
     } catch (error) {
@@ -913,6 +941,64 @@ const RestaurantMenu = () => {
               />
             </div>
 
+            <div className="mt-6 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+              <div className="flex items-start justify-between gap-4 flex-col md:flex-row">
+                <div>
+                  <p className="text-sm font-semibold text-emerald-800">Tip Your Crusher</p>
+                  <p className="text-sm text-emerald-700 mt-1">100% of the tip goes to the crusher, and the crusher sees base pay + tip before accepting.</p>
+                </div>
+                <p className="text-sm font-semibold text-emerald-800">Estimated crusher earnings: {formatCents(estimatedCrusherEarningsCents)}</p>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {TIP_PRESET_OPTIONS.map((tipOptionCents) => {
+                  const isSelected = !isCustomTip && selectedTipPresetCents === tipOptionCents;
+                  return (
+                    <button
+                      key={tipOptionCents}
+                      type="button"
+                      onClick={() => {
+                        setIsCustomTip(false);
+                        setSelectedTipPresetCents(tipOptionCents);
+                      }}
+                      className={`px-4 py-2 rounded-lg border text-sm font-semibold transition ${
+                        isSelected
+                          ? 'border-emerald-600 bg-emerald-600 text-white'
+                          : 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {tipOptionCents === 0 ? 'No Tip' : formatCents(tipOptionCents)}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setIsCustomTip(true)}
+                  className={`px-4 py-2 rounded-lg border text-sm font-semibold transition ${
+                    isCustomTip
+                      ? 'border-emerald-600 bg-emerald-600 text-white'
+                      : 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-100'
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {isCustomTip && (
+                <div className="mt-4 max-w-xs">
+                  <label className="block text-sm font-medium text-emerald-800 mb-1">Custom tip amount</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={customTipInput}
+                    onChange={(e) => setCustomTipInput(e.target.value)}
+                    placeholder="5.00"
+                    className="w-full border border-emerald-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              )}
+            </div>
+
             <div className="mt-6 rounded-xl bg-gray-50 border border-gray-200 p-4">
               <div className="flex justify-between text-sm mb-2">
                 <span>Items</span>
@@ -924,12 +1010,17 @@ const RestaurantMenu = () => {
               </div>
               <div className="flex justify-between text-sm mb-2">
                 <span>Delivery Fee</span>
-                <span>$0.00</span>
+                <span>{formatCents(deliveryFeeCents)}</span>
+              </div>
+              <div className="flex justify-between text-sm mb-2">
+                <span>Tip</span>
+                <span className="text-emerald-600 font-semibold">{formatCents(resolvedTipCents)}</span>
               </div>
               <div className="border-t border-gray-200 pt-3 mt-3 flex justify-between font-bold text-lg">
                 <span>Total</span>
-                <span className="text-[#FF6B35]">{formatCents(currentRestaurantSubtotal)}</span>
+                <span className="text-[#FF6B35]">{formatCents(customerTotalCents)}</span>
               </div>
+              <p className="text-xs text-gray-500 mt-3">Restaurant keeps the food subtotal. The crusher sees {formatCents(baseDriverPayoutCents)} base pay + your tip before accepting.</p>
             </div>
 
             <button
@@ -948,7 +1039,7 @@ const RestaurantMenu = () => {
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
             <div>
               <p className="font-semibold">{currentRestaurantItemCount} item(s) in cart</p>
-              <p className="text-sm text-gray-300">{formatCents(currentRestaurantSubtotal)}</p>
+              <p className="text-sm text-gray-300">{formatCents(customerTotalCents)}</p>
             </div>
             <button
               onClick={handleReviewOrder}

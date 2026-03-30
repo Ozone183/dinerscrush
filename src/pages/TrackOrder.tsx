@@ -32,23 +32,32 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  restaurantId?: string;
+  restaurantDocId?: string;
   restaurantName?: string;
-  customerName?: string;
-  customerPhone?: string;
-  customerAddress?: string;
+  customerName: string;
+  customerAddress: string;
+  customerPhone: string;
   customerEmail?: string | null;
   orderInstructions?: string;
-  driverName?: string | null;
-  driverId?: string | null;
   items: OrderItem[];
   subtotalAmount?: number;
   subtotalCents?: number;
   deliveryFeeAmount?: number;
   deliveryFeeCents?: number;
+  tipAmount?: number;
+  tipCents?: number;
   totalAmount?: number;
   totalCents?: number;
+  baseDriverPayoutAmount?: number;
+  baseDriverPayoutCents?: number;
+  driverPayoutAmount?: number;
+  driverPayoutCents?: number;
   status: OrderStatus;
-  createdAt?: FirestoreTimestampLike | null;
+  driverId?: string | null;
+  driverName?: string | null;
+  createdAt: FirestoreTimestampLike | null;
+  updatedAt?: FirestoreTimestampLike | null;
   assignedAt?: FirestoreTimestampLike | null;
   pickedUpAt?: FirestoreTimestampLike | null;
   onTheWayAt?: FirestoreTimestampLike | null;
@@ -159,6 +168,39 @@ const getItemPriceCents = (item: OrderItem) => {
   return 0;
 };
 
+const getSubtotalCents = (order: Order) => {
+  const fromSubtotalCents = normalizeMoneyToCents(order.subtotalCents);
+  if (fromSubtotalCents > 0) return fromSubtotalCents;
+
+  const fromSubtotalAmount = normalizeMoneyToCents(order.subtotalAmount);
+  if (fromSubtotalAmount > 0) return fromSubtotalAmount;
+
+  return order.items.reduce(
+    (sum, item) => sum + getItemPriceCents(item) * item.quantity,
+    0
+  );
+};
+
+const getDeliveryFeeCents = (order: Order) => {
+  const fromDeliveryFeeCents = normalizeMoneyToCents(order.deliveryFeeCents);
+  if (fromDeliveryFeeCents > 0) return fromDeliveryFeeCents;
+
+  const fromDeliveryFeeAmount = normalizeMoneyToCents(order.deliveryFeeAmount);
+  if (fromDeliveryFeeAmount > 0) return fromDeliveryFeeAmount;
+
+  return 0;
+};
+
+const getTipCents = (order: Order) => {
+  const fromTipCents = normalizeMoneyToCents(order.tipCents);
+  if (fromTipCents > 0) return fromTipCents;
+
+  const fromTipAmount = normalizeMoneyToCents(order.tipAmount);
+  if (fromTipAmount > 0) return fromTipAmount;
+
+  return 0;
+};
+
 const getOrderTotalCents = (order: Order) => {
   const fromTotalCents = normalizeMoneyToCents(order.totalCents);
   if (fromTotalCents > 0) return fromTotalCents;
@@ -166,10 +208,7 @@ const getOrderTotalCents = (order: Order) => {
   const fromTotalAmount = normalizeMoneyToCents(order.totalAmount);
   if (fromTotalAmount > 0) return fromTotalAmount;
 
-  return order.items.reduce(
-    (sum, item) => sum + getItemPriceCents(item) * item.quantity,
-    0
-  );
+  return getSubtotalCents(order) + getDeliveryFeeCents(order) + getTipCents(order);
 };
 
 const getTimestampMs = (value: FirestoreTimestampLike | Date | string | null | undefined): number => {
@@ -291,6 +330,9 @@ const TrackOrder = () => {
     );
   }
 
+  const subtotalCents = getSubtotalCents(order);
+  const deliveryFeeCents = getDeliveryFeeCents(order);
+  const tipCents = getTipCents(order);
   const totalCents = getOrderTotalCents(order);
   const driverJourneyMessage = getDriverJourneyMessage(order);
 
@@ -428,10 +470,25 @@ const TrackOrder = () => {
         )}
 
         <div className="mt-6 rounded-xl bg-gray-50 border border-gray-200 p-4">
-          <div className="flex justify-between font-bold text-lg">
-            <span>Total</span>
-            <span className="text-[#FF6B35]">{formatCents(totalCents)}</span>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Subtotal</span>
+              <span>{formatCents(subtotalCents)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Delivery Fee</span>
+              <span>{formatCents(deliveryFeeCents)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Tip for your crusher</span>
+              <span className="text-emerald-600 font-semibold">{formatCents(tipCents)}</span>
+            </div>
+            <div className="border-t border-gray-200 pt-3 mt-3 flex justify-between font-bold text-lg">
+              <span>Total</span>
+              <span className="text-[#FF6B35]">{formatCents(totalCents)}</span>
+            </div>
           </div>
+          <p className="text-xs text-gray-500 mt-3">Tips go 100% to your crusher.</p>
         </div>
       </div>
 

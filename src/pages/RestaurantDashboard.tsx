@@ -55,8 +55,18 @@ interface Order {
   customerEmail?: string | null;
   orderInstructions?: string;
   items: OrderItem[];
+  subtotalAmount?: number;
+  subtotalCents?: number;
+  deliveryFeeAmount?: number;
+  deliveryFeeCents?: number;
   totalAmount?: number;
   totalCents?: number;
+  tipAmount?: number;
+  tipCents?: number;
+  baseDriverPayoutAmount?: number;
+  baseDriverPayoutCents?: number;
+  driverPayoutAmount?: number;
+  driverPayoutCents?: number;
   status: OrderStatus;
   driverId?: string | null;
   driverName?: string | null;
@@ -151,6 +161,62 @@ const getOrderItemPriceCents = (item: OrderItem) => {
   return 0;
 };
 
+const getSubtotalCents = (order: Order) => {
+  const fromSubtotalCents = normalizeMoneyToCents(order.subtotalCents);
+  if (fromSubtotalCents > 0) return fromSubtotalCents;
+
+  const fromSubtotalAmount = normalizeMoneyToCents(order.subtotalAmount);
+  if (fromSubtotalAmount > 0) return fromSubtotalAmount;
+
+  return order.items.reduce(
+    (sum, item) => sum + getOrderItemPriceCents(item) * item.quantity,
+    0
+  );
+};
+
+const getDeliveryFeeCents = (order: Order) => {
+  const fromDeliveryFeeCents = normalizeMoneyToCents(order.deliveryFeeCents);
+  if (fromDeliveryFeeCents > 0) return fromDeliveryFeeCents;
+
+  const fromDeliveryFeeAmount = normalizeMoneyToCents(order.deliveryFeeAmount);
+  if (fromDeliveryFeeAmount > 0) return fromDeliveryFeeAmount;
+
+  return 0;
+};
+
+const getTipCents = (order: Order) => {
+  const fromTipCents = normalizeMoneyToCents(order.tipCents);
+  if (fromTipCents > 0) return fromTipCents;
+
+  const fromTipAmount = normalizeMoneyToCents(order.tipAmount);
+  if (fromTipAmount > 0) return fromTipAmount;
+
+  return 0;
+};
+
+const getBaseDriverPayoutCents = (order: Order) => {
+  const explicitBase = normalizeMoneyToCents(order.baseDriverPayoutCents);
+  if (explicitBase > 0) return explicitBase;
+
+  const explicitBaseAmount = normalizeMoneyToCents(order.baseDriverPayoutAmount);
+  if (explicitBaseAmount > 0) return explicitBaseAmount;
+
+  const deliveryFeeBased = getDeliveryFeeCents(order);
+  if (deliveryFeeBased > 0) return deliveryFeeBased;
+
+  return 500;
+};
+
+const getDriverPayoutCents = (order: Order) => {
+  const fromDriverPayoutCents = normalizeMoneyToCents(order.driverPayoutCents);
+  if (fromDriverPayoutCents > 0) return fromDriverPayoutCents;
+
+  const fromDriverPayoutAmount = normalizeMoneyToCents(order.driverPayoutAmount);
+  if (fromDriverPayoutAmount > 0) return fromDriverPayoutAmount;
+
+  return getBaseDriverPayoutCents(order) + getTipCents(order);
+};
+
 const getOrderTotalCents = (order: Order) => {
   const fromTotalCents = normalizeMoneyToCents(order.totalCents);
   if (fromTotalCents > 0) return fromTotalCents;
@@ -158,10 +224,14 @@ const getOrderTotalCents = (order: Order) => {
   const fromTotalAmount = normalizeMoneyToCents(order.totalAmount);
   if (fromTotalAmount > 0) return fromTotalAmount;
 
-  return order.items.reduce(
-    (sum, item) => sum + getOrderItemPriceCents(item) * item.quantity,
-    0
-  );
+  return getSubtotalCents(order) + getDeliveryFeeCents(order) + getTipCents(order);
+};
+
+const getRestaurantSalesCents = (order: Order) => {
+  const subtotalCents = getSubtotalCents(order);
+  if (subtotalCents > 0) return subtotalCents;
+
+  return Math.max(0, getOrderTotalCents(order) - getDeliveryFeeCents(order) - getTipCents(order));
 };
 
 const getMenuItemPriceCents = (item: MenuItem) => {
@@ -515,7 +585,17 @@ const RestaurantDashboard = () => {
   );
 
   const deliveredRevenueCents = useMemo(
-    () => deliveredOrders.reduce((sum, order) => sum + getOrderTotalCents(order), 0),
+    () => deliveredOrders.reduce((sum, order) => sum + getRestaurantSalesCents(order), 0),
+    [deliveredOrders]
+  );
+
+  const deliveredTipCents = useMemo(
+    () => deliveredOrders.reduce((sum, order) => sum + getTipCents(order), 0),
+    [deliveredOrders]
+  );
+
+  const deliveredCrusherEarningsCents = useMemo(
+    () => deliveredOrders.reduce((sum, order) => sum + getDriverPayoutCents(order), 0),
     [deliveredOrders]
   );
 
@@ -590,6 +670,9 @@ const RestaurantDashboard = () => {
   };
 
   const renderOrderCard = (order: Order) => {
+    const subtotalCents = getRestaurantSalesCents(order);
+    const tipCents = getTipCents(order);
+    const driverPayoutCents = getDriverPayoutCents(order);
     const totalCents = getOrderTotalCents(order);
 
     return (
@@ -641,9 +724,23 @@ const RestaurantDashboard = () => {
               <span>{formatCents(getOrderItemPriceCents(item) * item.quantity)}</span>
             </div>
           ))}
-          <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between font-semibold">
-            <span>Total</span>
-            <span className="text-[#FF6B35]">{formatCents(totalCents)}</span>
+          <div className="border-t border-gray-200 pt-2 mt-2 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span>Food sales</span>
+              <span>{formatCents(subtotalCents)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Customer tip</span>
+              <span className="text-emerald-600 font-semibold">{formatCents(tipCents)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span>Crusher earnings</span>
+              <span>{formatCents(driverPayoutCents)}</span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span>Customer total</span>
+              <span className="text-[#FF6B35]">{formatCents(totalCents)}</span>
+            </div>
           </div>
         </div>
 
@@ -850,17 +947,26 @@ const RestaurantDashboard = () => {
       )}
 
       {activeTab === 'earnings' && (
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-6">
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Delivered Orders</h2>
             <p className="text-3xl font-bold text-[#2D3142] mt-3">{deliveredOrders.length}</p>
           </div>
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Delivered Revenue</h2>
+            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Delivered Food Sales</h2>
             <p className="text-3xl font-bold text-[#FF6B35] mt-3">{formatCents(deliveredRevenueCents)}</p>
+            <p className="text-xs text-gray-500 mt-2">Tips are excluded from restaurant revenue.</p>
           </div>
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Average Order Value</h2>
+            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Customer Tips</h2>
+            <p className="text-3xl font-bold text-emerald-600 mt-3">{formatCents(deliveredTipCents)}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Crusher Earnings</h2>
+            <p className="text-3xl font-bold text-[#2D3142] mt-3">{formatCents(deliveredCrusherEarningsCents)}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-sm uppercase tracking-wide text-gray-500 font-semibold">Average Food Ticket</h2>
             <p className="text-3xl font-bold text-[#2D3142] mt-3">{formatCents(averageDeliveredOrderValueCents)}</p>
           </div>
         </div>
