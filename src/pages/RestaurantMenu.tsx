@@ -43,6 +43,55 @@ interface MenuItem {
 
 const OPEN_SCROLL_THRESHOLD = 420;
 
+const CHECKOUT_PREFILL_KEY = 'dinerscrush_checkout_prefill_v1';
+
+const getInitialCheckoutForm = () => {
+  if (typeof window === 'undefined') {
+    return {
+      customerName: '',
+      customerPhone: '',
+      customerAddress: '',
+      orderInstructions: '',
+    };
+  }
+
+  try {
+    const savedRaw = window.localStorage.getItem(CHECKOUT_PREFILL_KEY);
+
+    if (!savedRaw) {
+      return {
+        customerName: '',
+        customerPhone: '',
+        customerAddress: '',
+        orderInstructions: '',
+      };
+    }
+
+    const saved = JSON.parse(savedRaw) as Partial<{
+      customerName: string;
+      customerPhone: string;
+      customerAddress: string;
+    }>;
+
+    return {
+      customerName: saved.customerName || '',
+      customerPhone: saved.customerPhone || '',
+      customerAddress: saved.customerAddress || '',
+      orderInstructions: '',
+    };
+  } catch (error) {
+    console.error('Error reading checkout prefill:', error);
+
+    return {
+      customerName: '',
+      customerPhone: '',
+      customerAddress: '',
+      orderInstructions: '',
+    };
+  }
+};
+
+
 const formatCents = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 const pickFirstString = (...values: unknown[]) => {
@@ -212,12 +261,7 @@ const RestaurantMenu = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [reviewMode, setReviewMode] = useState(false);
 
-  const [checkoutForm, setCheckoutForm] = useState({
-    customerName: '',
-    customerPhone: '',
-    customerAddress: '',
-    orderInstructions: '',
-  });
+  const [checkoutForm, setCheckoutForm] = useState(getInitialCheckoutForm);
 
   useEffect(() => {
     if (!id) return;
@@ -234,6 +278,28 @@ const RestaurantMenu = () => {
 
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    try {
+      window.localStorage.setItem(
+        CHECKOUT_PREFILL_KEY,
+        JSON.stringify({
+          customerName: checkoutForm.customerName,
+          customerPhone: checkoutForm.customerPhone,
+          customerAddress: checkoutForm.customerAddress,
+        })
+      );
+    } catch (error) {
+      console.error('Error saving checkout prefill:', error);
+    }
+  }, [
+    checkoutForm.customerName,
+    checkoutForm.customerPhone,
+    checkoutForm.customerAddress,
+  ]);
+
 
   const fetchRestaurantAndMenu = async (routeRestaurantId: string) => {
     try {
@@ -365,15 +431,17 @@ const RestaurantMenu = () => {
         }
       }
 
-      const mergedMenu = Array.from(mergedMap.values()).sort((a, b) => {
-        const categoryCompare = (a.category || 'Main').localeCompare(b.category || 'Main');
-        if (categoryCompare !== 0) return categoryCompare;
+      const mergedMenu = Array.from(mergedMap.values())
+        .filter((item) => getItemPriceCents(item) > 0)
+        .sort((a, b) => {
+          const categoryCompare = (a.category || 'Main').localeCompare(b.category || 'Main');
+          if (categoryCompare !== 0) return categoryCompare;
 
-        const sortCompare = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-        if (sortCompare !== 0) return sortCompare;
+          const sortCompare = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+          if (sortCompare !== 0) return sortCompare;
 
-        return a.name.localeCompare(b.name);
-      });
+          return a.name.localeCompare(b.name);
+        });
 
       setMenu(mergedMenu);
     } catch (error) {
@@ -528,12 +596,10 @@ const RestaurantMenu = () => {
       localStorage.setItem('dinerscrush_last_order_id', docRef.id);
 
       clearCart();
-      setCheckoutForm({
-        customerName: '',
-        customerPhone: '',
-        customerAddress: '',
+      setCheckoutForm((prev) => ({
+        ...prev,
         orderInstructions: '',
-      });
+      }));
 
       window.location.assign(`/track-order/${docRef.id}`);
     } catch (error) {
