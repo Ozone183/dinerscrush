@@ -756,7 +756,9 @@ const RestaurantDashboard = () => {
       <Toaster position="top-right" />
 
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-[#2D3142]">Restaurant Dashboard</h1>
+      <h1 className="text-3xl font-bold text-[#2D3142]">
+  🍳 Welcome back, {restaurantIdentifiers?.displayName || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Partner'}
+</h1>
         <p className="text-gray-600 mt-2">
           Manage kitchen flow, watch crusher pickup progress, and see deliveries complete live.
         </p>

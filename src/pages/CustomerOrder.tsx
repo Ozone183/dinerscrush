@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { db } from '../firebase/config';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
 interface Restaurant {
   id: string;
@@ -12,12 +13,35 @@ interface Restaurant {
 }
 
 const CustomerOrder = () => {
+  const { currentUser } = useAuth();
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [customerName, setCustomerName] = useState('');
 
   useEffect(() => {
     fetchAllRestaurants();
   }, []);
+
+  useEffect(() => {
+    const loadCustomerName = async () => {
+      if (!currentUser?.uid) {
+        setCustomerName('');
+        return;
+      }
+
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const data = userDoc.data();
+          setCustomerName(typeof data.name === 'string' ? data.name : '');
+        }
+      } catch (error) {
+        console.error('Error loading customer profile:', error);
+      }
+    };
+
+    loadCustomerName();
+  }, [currentUser?.uid]);
 
   const fetchAllRestaurants = async () => {
     try {
@@ -28,10 +52,10 @@ const CustomerOrder = () => {
       const restaurantsSnapshot = await getDocs(restaurantsRef);
 
       if (!restaurantsSnapshot.empty) {
-        restaurantsSnapshot.docs.forEach((doc) => {
-          const data = doc.data();
+        restaurantsSnapshot.docs.forEach((docSnapshot) => {
+          const data = docSnapshot.data();
           normalizedRestaurants.push({
-            id: doc.id,
+            id: docSnapshot.id,
             name: data.name || data.restaurantName || 'Unnamed Restaurant',
             address: data.address,
             phone: data.phone,
@@ -50,10 +74,10 @@ const CustomerOrder = () => {
       const usersQuery = query(usersRef, where('role', '==', 'restaurant'));
       const usersSnapshot = await getDocs(usersQuery);
 
-      usersSnapshot.docs.forEach((doc) => {
-        const data = doc.data();
+      usersSnapshot.docs.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
         normalizedRestaurants.push({
-          id: doc.id,
+          id: docSnapshot.id,
           name: data.name || 'Unnamed Restaurant',
           address: data.address,
           phone: data.phone,
@@ -71,6 +95,12 @@ const CustomerOrder = () => {
     }
   };
 
+  const customerDisplayName =
+    customerName ||
+    currentUser?.displayName ||
+    currentUser?.email?.split('@')[0] ||
+    'Crush';
+
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-12 text-center">
@@ -81,8 +111,13 @@ const CustomerOrder = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold text-[#2D3142]">🍽️ Find Your Crush</h1>
-      <p className="text-gray-600 mt-1 mb-6">Discover the best Crush Kitchens near you</p>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-[#2D3142]">
+          🍽️ Welcome back, {customerDisplayName}
+        </h1>
+        <p className="text-gray-600 mt-1">Find Your Crush</p>
+        <p className="text-gray-600 mt-1">Discover the best Crush Kitchens near you</p>
+      </div>
 
       {restaurants.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border border-gray-100">
@@ -99,7 +134,7 @@ const CustomerOrder = () => {
               key={restaurant.id}
               className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition"
             >
-              <div className="flex justify-between items-start">
+              <div className="flex justify-between items-start gap-4">
                 <div>
                   <h3 className="font-semibold text-lg text-[#2D3142]">{restaurant.name}</h3>
                   {restaurant.cuisine && (
@@ -109,7 +144,7 @@ const CustomerOrder = () => {
                     <p className="text-gray-400 text-xs mt-2">📍 {restaurant.address}</p>
                   )}
                 </div>
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <div className="text-[#FF6B35] font-bold">⭐ New</div>
                   <div className="text-xs text-gray-400">15-25 min</div>
                 </div>
@@ -128,7 +163,7 @@ const CustomerOrder = () => {
 
       <div className="mt-12 text-center">
         <p className="text-gray-500">
-          More restaurants coming soon.{' '}
+          More restaurants coming soon.{` `}
           <Link to="/signup" className="text-[#FF6B35]">
             Are you a restaurant? Partner with us →
           </Link>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { useAuth } from '../context/AuthContext';
 
 type OrderStatus =
   | 'pending'
@@ -155,6 +156,12 @@ const normalizeMoneyToCents = (value: unknown): number => {
 
 const formatCents = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
+const getFirstName = (value?: string | null) => {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/)[0] || '';
+};
+
 const getItemPriceCents = (item: OrderItem) => {
   const fromPriceCents = normalizeMoneyToCents(item.priceCents);
   if (fromPriceCents > 0) return fromPriceCents;
@@ -252,6 +259,7 @@ const getDriverJourneyMessage = (order: Order): string | null => {
 };
 
 const TrackOrder = () => {
+  const { currentUser } = useAuth();
   const { orderId } = useParams<{ orderId: string }>();
   const resolvedOrderId =
     orderId || localStorage.getItem('dinerscrush_last_order_id') || '';
@@ -259,6 +267,7 @@ const TrackOrder = () => {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [viewerFirstName, setViewerFirstName] = useState('');
 
   useEffect(() => {
     if (!resolvedOrderId) {
@@ -298,6 +307,34 @@ const TrackOrder = () => {
 
     return () => unsubscribe();
   }, [resolvedOrderId]);
+
+  useEffect(() => {
+    const loadViewerName = async () => {
+      if (!currentUser?.uid) {
+        setViewerFirstName('');
+        return;
+      }
+  
+      try {
+        const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+        if (!userSnap.exists()) {
+          setViewerFirstName(getFirstName(currentUser.displayName));
+          return;
+        }
+  
+        const data = userSnap.data();
+        const profileName =
+          typeof data.name === 'string' ? data.name : currentUser.displayName;
+  
+        setViewerFirstName(getFirstName(profileName));
+      } catch (error) {
+        console.error('Error loading viewer profile:', error);
+        setViewerFirstName(getFirstName(currentUser.displayName));
+      }
+    };
+  
+    void loadViewerName();
+  }, [currentUser?.uid, currentUser?.displayName]);
 
   const currentStatus: OrderStatus = order?.status || 'pending';
   const currentMeta = STATUS_META[currentStatus];
@@ -343,9 +380,11 @@ const TrackOrder = () => {
       </Link>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
-        <h1 className="text-2xl font-bold text-[#2D3142]">Track Your Order</h1>
+        <h1 className="text-2xl font-bold text-[#2D3142]">
+          🍽️ Welcome back, {viewerFirstName || getFirstName(order.customerName) || 'Crush'}
+        </h1>
         <p className="text-gray-600 mt-2">
-          Order <span className="font-semibold">#{order.id.slice(0, 8)}</span>
+          Tracking order <span className="font-semibold">#{order.id.slice(0, 8)}</span>
         </p>
         {order.restaurantName && (
           <p className="text-gray-500 text-sm mt-1">{order.restaurantName}</p>

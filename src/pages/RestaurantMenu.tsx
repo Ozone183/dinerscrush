@@ -264,6 +264,37 @@ const RestaurantMenu = () => {
   const [reviewMode, setReviewMode] = useState(false);
 
   const [checkoutForm, setCheckoutForm] = useState(getInitialCheckoutForm);
+
+  useEffect(() => {
+    const loadSignedInCustomerProfile = async () => {
+      if (!currentUser?.uid) return;
+
+      try {
+        const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+        const data = userSnap.exists() ? userSnap.data() : {};
+
+        const profileName = pickFirstString(
+          data.name,
+          currentUser.displayName,
+          currentUser.email?.split('@')[0]
+        );
+        const profilePhone = pickFirstString(data.phone);
+        const profileAddress = pickFirstString(data.address);
+
+        setCheckoutForm((prev) => ({
+          ...prev,
+          customerName: profileName || prev.customerName,
+          customerPhone: profilePhone || prev.customerPhone,
+          customerAddress: profileAddress || prev.customerAddress,
+        }));
+      } catch (error) {
+        console.error('Error loading signed-in customer profile:', error);
+      }
+    };
+
+    void loadSignedInCustomerProfile();
+  }, [currentUser?.uid, currentUser?.displayName, currentUser?.email]);
+
   const [selectedTipPresetCents, setSelectedTipPresetCents] = useState(500);
   const [customTipInput, setCustomTipInput] = useState('');
   const [isCustomTip, setIsCustomTip] = useState(false);
@@ -338,8 +369,19 @@ const RestaurantMenu = () => {
         restaurantData = {
           id: restaurantDoc.id,
           name: restaurantName,
-          address: pickFirstString(data.address),
-          phone: pickFirstString(data.phone),
+          address: pickFirstString(
+            data.address,
+            data.restaurantAddress,
+            data.businessAddress,
+            data.location,
+            data.streetAddress
+          ),
+          phone: pickFirstString(
+            data.phone,
+            data.restaurantPhone,
+            data.businessPhone
+          ),
+          
           cuisine: pickFirstString(data.cuisine),
           orderTargetId: resolvedOwnerUid,
           menuLookupIds: Array.from(
@@ -356,8 +398,18 @@ const RestaurantMenu = () => {
           restaurantData = {
             id: linkedRestaurantId || userDoc.id,
             name: pickFirstString(data.name, data.restaurantName) || 'Restaurant',
-            address: pickFirstString(data.address),
-            phone: pickFirstString(data.phone),
+            address: pickFirstString(
+              data.address,
+              data.restaurantAddress,
+              data.businessAddress,
+              data.location,
+              data.streetAddress
+            ),
+            phone: pickFirstString(
+              data.phone,
+              data.restaurantPhone,
+              data.businessPhone
+            ),
             cuisine: pickFirstString(data.cuisine),
             orderTargetId: userDoc.id,
             menuLookupIds: Array.from(new Set([userDoc.id, linkedRestaurantId].filter(Boolean))),

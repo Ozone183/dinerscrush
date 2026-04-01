@@ -3,8 +3,10 @@ import {
   collection,
   doc,
   onSnapshot,
+  query,
   runTransaction,
   setDoc,
+  where,
   type DocumentData,
 } from 'firebase/firestore';
 import toast, { Toaster } from 'react-hot-toast';
@@ -84,6 +86,7 @@ interface DriverProfile {
 
 interface RestaurantRecord {
   id: string;
+  lookupIds?: string[];
   name?: string;
   restaurantName?: string;
   address?: string;
@@ -126,9 +129,7 @@ const normalizeMoneyToCents = (value: unknown): number => {
 
 const formatCents = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 
-const getTimestampMs = (
-  value: FirestoreTimestampLike | Date | string | null | undefined
-): number => {
+const getTimestampMs = (value: FirestoreTimestampLike | Date | string | null | undefined): number => {
   if (!value) return 0;
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'string') {
@@ -140,9 +141,7 @@ const getTimestampMs = (
   return 0;
 };
 
-const formatDateTime = (
-  value: FirestoreTimestampLike | Date | string | null | undefined
-): string => {
+const formatDateTime = (value: FirestoreTimestampLike | Date | string | null | undefined): string => {
   const ms = getTimestampMs(value);
   if (!ms) return 'Just now';
   return new Date(ms).toLocaleString();
@@ -166,9 +165,7 @@ const getOrderTotalCents = (order: Order): number => {
     return Math.max(0, Math.round(order.totalCents));
   }
   if (typeof order.totalAmount === 'number' && Number.isFinite(order.totalAmount)) {
-    if (order.totalAmount >= 100 && Number.isInteger(order.totalAmount)) {
-      return Math.round(order.totalAmount);
-    }
+    if (order.totalAmount >= 100 && Number.isInteger(order.totalAmount)) return Math.round(order.totalAmount);
     return Math.round(order.totalAmount * 100);
   }
   if (typeof order.total === 'number' && Number.isFinite(order.total)) {
@@ -217,10 +214,7 @@ const getCustomerAddress = (order: Order): string =>
 const buildMapsUrl = (address: string): string =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
-const getDriverDisplayName = (
-  profile: DriverProfile,
-  email: string | null | undefined
-): string => {
+const getDriverDisplayName = (profile: DriverProfile, email: string | null | undefined): string => {
   if (profile.name.trim()) return profile.name.trim();
   if (email) return email.split('@')[0];
   return 'Crusher';
@@ -283,18 +277,35 @@ const DriverDashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const [availabilitySaving, setAvailabilitySaving] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<
-    NotificationPermission | 'unsupported'
-  >(
-    typeof window !== 'undefined' && 'Notification' in window
-      ? window.Notification.permission
-      : 'unsupported'
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(
+    typeof window !== 'undefined' && 'Notification' in window ? window.Notification.permission : 'unsupported'
   );
   const [claimingOrderId, setClaimingOrderId] = useState<string | null>(null);
   const [decliningOrderId, setDecliningOrderId] = useState<string | null>(null);
   const [releasingOrderId, setReleasingOrderId] = useState<string | null>(null);
   const [statusActionOrderId, setStatusActionOrderId] = useState<string | null>(null);
   const notifiedReadyOrderIdsRef = useRef<Set<string>>(new Set());
+  type DriverAccordionSection = 'pickup' | 'dropoff' | 'items' | null;
+  const [openSectionsByOrder, setOpenSectionsByOrder] = useState<Record<string, DriverAccordionSection>>({});
+
+  const toggleOrderSection = (
+    orderKey: string,
+    section: Exclude<DriverAccordionSection, null>
+  ) => {
+    setOpenSectionsByOrder((prev) => ({
+      ...prev,
+      [orderKey]: prev[orderKey] === section ? null : section,
+    }));
+  };
+
+  const getOpenSection = (
+    orderKey: string,
+    defaultSection: DriverAccordionSection = null
+  ): DriverAccordionSection => (
+    Object.prototype.hasOwnProperty.call(openSectionsByOrder, orderKey)
+      ? openSectionsByOrder[orderKey]
+      : defaultSection
+  );
 
   useEffect(() => {
     if (!currentUser) return;
@@ -323,27 +334,97 @@ const DriverDashboard = () => {
       setLoading(false);
     });
 
-    const unsubscribeRestaurants = onSnapshot(collection(db, 'restaurants'), (snapshot) => {
+    const normalizeRestaurantRecord = (
+      sourceId: string,
+      data: DocumentData,
+      extraLookupIds: string[] = []
+    ): RestaurantRecord => {
+      const lookupIds = Array.from(
+        new Set(
+          [sourceId, ...extraLookupIds].filter(
+            (value): value is string => typeof value === 'string' && value.trim().length > 0
+          )
+        )
+      );
+
+      return {
+        id: sourceId,
+        lookupIds,
+        name:
+          (typeof data.name === 'string' && data.name.trim()) ||
+          (typeof data.restaurantName === 'string' && data.restaurantName.trim()) ||
+          '',
+        restaurantName:
+          (typeof data.restaurantName === 'string' && data.restaurantName.trim()) ||
+          (typeof data.name === 'string' && data.name.trim()) ||
+          '',
+        address:
+          (typeof data.address === 'string' && data.address.trim()) ||
+          (typeof data.restaurantAddress === 'string' && data.restaurantAddress.trim()) ||
+          (typeof data.businessAddress === 'string' && data.businessAddress.trim()) ||
+          (typeof data.location === 'string' && data.location.trim()) ||
+          (typeof data.streetAddress === 'string' && data.streetAddress.trim()) ||
+          '',
+        phone:
+          (typeof data.phone === 'string' && data.phone.trim()) ||
+          (typeof data.restaurantPhone === 'string' && data.restaurantPhone.trim()) ||
+          (typeof data.businessPhone === 'string' && data.businessPhone.trim()) ||
+          '',
+      };
+    };
+
+    let restaurantCollectionRecords: RestaurantRecord[] = [];
+    let restaurantUserRecords: RestaurantRecord[] = [];
+
+    const syncRestaurantMaps = () => {
       const byId: Record<string, RestaurantRecord> = {};
       const byName: Record<string, RestaurantRecord> = {};
 
-      snapshot.docs.forEach((restaurantDoc) => {
-        const data = restaurantDoc.data() as RestaurantRecord;
-        const record: RestaurantRecord = { ...data, id: restaurantDoc.id };
-        byId[restaurantDoc.id] = record;
-        const nameKey = (data.name || data.restaurantName || '').trim().toLowerCase();
+      [...restaurantCollectionRecords, ...restaurantUserRecords].forEach((record) => {
+        const ids = record.lookupIds?.length ? record.lookupIds : [record.id];
+
+        ids.forEach((lookupId) => {
+          if (lookupId) byId[lookupId] = record;
+        });
+
+        const nameKey = (record.name || record.restaurantName || '').trim().toLowerCase();
         if (nameKey) byName[nameKey] = record;
       });
 
       setRestaurantsById(byId);
       setRestaurantsByName(byName);
+    };
+
+    const unsubscribeRestaurants = onSnapshot(collection(db, 'restaurants'), (snapshot) => {
+      restaurantCollectionRecords = snapshot.docs.map((restaurantDoc) =>
+        normalizeRestaurantRecord(restaurantDoc.id, restaurantDoc.data() as DocumentData)
+      );
+
+      syncRestaurantMaps();
     });
+
+    const unsubscribeRestaurantUsers = onSnapshot(
+      query(collection(db, 'users'), where('role', '==', 'restaurant')),
+      (snapshot) => {
+        restaurantUserRecords = snapshot.docs.map((userDoc) => {
+          const data = userDoc.data() as DocumentData;
+
+          return normalizeRestaurantRecord(userDoc.id, data, [
+            typeof data.restaurantId === 'string' ? data.restaurantId : '',
+          ]);
+        });
+
+        syncRestaurantMaps();
+      }
+    );
 
     return () => {
       unsubscribeUser();
       unsubscribeOrders();
       unsubscribeRestaurants();
+      unsubscribeRestaurantUsers();
     };
+
   }, [currentUser]);
 
   useEffect(() => {
@@ -381,13 +462,9 @@ const DriverDashboard = () => {
       .filter((order) => {
         if (order.status !== READY_STATUS || order.driverId) return false;
         if (!currentUser?.uid) return true;
-
         const declinedIds = Array.isArray(order.declinedByDriverIds)
-          ? order.declinedByDriverIds.filter(
-            (value): value is string => typeof value === 'string'
-          )
+          ? order.declinedByDriverIds.filter((value): value is string => typeof value === 'string')
           : [];
-
         return !declinedIds.includes(currentUser.uid);
       })
       .sort((a, b) => getTimestampMs(a.createdAt) - getTimestampMs(b.createdAt));
@@ -454,9 +531,25 @@ const DriverDashboard = () => {
   };
 
   const getRestaurantAddress = (order: Order): string => {
-    const inlineAddress = (order.restaurantAddress || '').trim();
-    if (inlineAddress) return inlineAddress;
-    return getRestaurantRecord(order)?.address?.trim() || 'Restaurant address unavailable';
+    const restaurantRecord = getRestaurantRecord(order) as
+      | (RestaurantRecord & {
+          restaurantAddress?: string;
+          businessAddress?: string;
+          location?: string;
+          streetAddress?: string;
+        })
+      | null;
+  
+    return (
+      [
+        order.restaurantAddress,
+        restaurantRecord?.address,
+        restaurantRecord?.restaurantAddress,
+        restaurantRecord?.businessAddress,
+        restaurantRecord?.location,
+        restaurantRecord?.streetAddress,
+      ].find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() || ''
+    );
   };
 
   const getRestaurantPhone = (order: Order): string => {
@@ -554,11 +647,9 @@ const DriverDashboard = () => {
           throw new Error('Another driver already accepted this order.');
         }
 
-        const currentOrderId =
-          typeof userSnap.data()?.currentOrderId === 'string'
-            ? userSnap.data()?.currentOrderId
-            : null;
-
+        const currentOrderId = typeof userSnap.data()?.currentOrderId === 'string'
+          ? userSnap.data()?.currentOrderId
+          : null;
         if (currentOrderId && currentOrderId !== orderId) {
           throw new Error('You already have an active crush assigned.');
         }
@@ -607,19 +698,15 @@ const DriverDashboard = () => {
         }
 
         const orderData = orderSnap.data() as DocumentData;
-
         if (orderData.status !== READY_STATUS) {
           throw new Error('This order is no longer ready for pickup.');
         }
-
         if (orderData.driverId) {
           throw new Error('Another crusher already accepted this order.');
         }
 
         const declinedIds = Array.isArray(orderData.declinedByDriverIds)
-          ? orderData.declinedByDriverIds.filter(
-            (value: unknown): value is string => typeof value === 'string'
-          )
+          ? orderData.declinedByDriverIds.filter((value: unknown): value is string => typeof value === 'string')
           : [];
 
         if (!declinedIds.includes(currentUser.uid)) {
@@ -634,7 +721,7 @@ const DriverDashboard = () => {
         }
       });
 
-      toast.success('Order declined. Removed from your queue.');
+      toast.success('Order declined. We removed it from your queue.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to decline order.');
     } finally {
@@ -746,10 +833,9 @@ const DriverDashboard = () => {
         const userPatch: Record<string, unknown> = {};
         if (nextStatus === 'delivered') {
           userPatch.currentOrderId = null;
-          userPatch.totalDeliveries =
-            (typeof userSnap.data()?.totalDeliveries === 'number'
-              ? userSnap.data()?.totalDeliveries
-              : 0) + 1;
+          userPatch.totalDeliveries = (typeof userSnap.data()?.totalDeliveries === 'number'
+            ? userSnap.data()?.totalDeliveries
+            : 0) + 1;
         }
 
         if (Object.keys(userPatch).length > 0) {
@@ -787,11 +873,14 @@ const DriverDashboard = () => {
 
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-[#2D3142]">⚡ Crusher Hub</h1>
+          <h1 className="text-3xl font-bold text-[#2D3142]">
+            ⚡ Welcome back, {driverProfile.name || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Crusher'}
+          </h1>
           <p className="text-gray-600 mt-1">
             Claim ready orders, drive to pickup, head to the crush, and close out delivery live.
           </p>
         </div>
+
         <div className="flex flex-wrap items-center gap-3">
           {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
             <button
@@ -827,8 +916,8 @@ const DriverDashboard = () => {
             onClick={toggleAvailability}
             disabled={availabilitySaving}
             className={`px-5 py-2 rounded-xl font-semibold transition disabled:opacity-60 disabled:cursor-not-allowed ${driverProfile.isAvailable
-                ? 'bg-white text-[#FF6B35] hover:bg-orange-50'
-                : 'bg-[#2D3142] text-white hover:bg-gray-800'
+              ? 'bg-white text-[#FF6B35] hover:bg-orange-50'
+              : 'bg-[#2D3142] text-white hover:bg-gray-800'
               }`}
           >
             {availabilitySaving
@@ -854,9 +943,7 @@ const DriverDashboard = () => {
           <p className="text-xs text-gray-500 mt-1">Crushed Today</p>
         </div>
         <div className="bg-white rounded-xl p-4 text-center shadow-sm border border-gray-100">
-          <p className="text-2xl font-bold text-[#2D3142]">
-            {formatCents(todayDriverPayoutCents)}
-          </p>
+          <p className="text-2xl font-bold text-[#2D3142]">{formatCents(todayDriverPayoutCents)}</p>
           <p className="text-xs text-gray-500 mt-1">Today's Payout</p>
         </div>
       </div>
@@ -866,11 +953,7 @@ const DriverDashboard = () => {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-[#2D3142]">🛵 My Active Crush</h2>
             {activeOrder && (
-              <span
-                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(
-                  activeOrder.status
-                )}`}
-              >
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(activeOrder.status)}`}>
                 {getStatusLabel(activeOrder.status)}
               </span>
             )}
@@ -882,125 +965,121 @@ const DriverDashboard = () => {
             <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-5">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3">
                 <div>
-                  <p className="text-xl font-bold text-[#2D3142]">
-                    {activeOrder.restaurantName || 'Restaurant order'}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    For {activeOrder.customerName || 'Customer'}
-                  </p>
+                  <p className="text-xl font-bold text-[#2D3142]">{activeOrder.restaurantName || 'Restaurant order'}</p>
+                  <p className="text-sm text-gray-600 mt-1">For {activeOrder.customerName || 'Customer'}</p>
                   {activeOrder.driverName && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Assigned to {activeOrder.driverName}
-                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Assigned to {activeOrder.driverName}</p>
                   )}
                 </div>
                 <div className="text-left sm:text-right">
                   <p className="text-sm text-gray-500">Customer Total</p>
-                  <p className="text-lg font-bold text-[#FF6B35]">
-                    {formatCents(getOrderTotalCents(activeOrder))}
-                  </p>
-
+                  <p className="text-lg font-bold text-[#FF6B35]">{formatCents(getOrderTotalCents(activeOrder))}</p>
                   <p className="text-sm text-gray-500 mt-2">Base Pay</p>
-                  <p className="text-base font-bold text-[#2D3142]">
-                    {formatCents(getBaseDriverPayoutCents(activeOrder))}
-                  </p>
-
+                  <p className="text-base font-bold text-[#2D3142]">{formatCents(getBaseDriverPayoutCents(activeOrder))}</p>
                   <p className="text-sm text-gray-500 mt-2">Tip</p>
-                  <p className="text-base font-bold text-emerald-600">
-                    {formatCents(getTipCents(activeOrder))}
-                  </p>
-
+                  <p className="text-base font-bold text-emerald-600">{formatCents(getTipCents(activeOrder))}</p>
                   <p className="text-sm text-gray-500 mt-2">Total Earnings</p>
-                  <p className="text-lg font-bold text-[#2D3142]">
-                    {formatCents(getDriverPayoutCents(activeOrder))}
-                  </p>
+                  <p className="text-lg font-bold text-[#2D3142]">{formatCents(getDriverPayoutCents(activeOrder))}</p>
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 text-sm text-gray-700">
-                <div className="rounded-xl bg-white border border-gray-100 p-4">
-                  <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">
-                    Pickup
-                  </p>
-                  <p className="font-semibold text-[#2D3142] mt-1">
-                    {activeOrder.restaurantName || 'Restaurant'}
-                  </p>
-                  <p className="mt-1">{getRestaurantAddress(activeOrder)}</p>
-                  {getRestaurantPhone(activeOrder) && (
-                    <p className="mt-1">📞 {getRestaurantPhone(activeOrder)}</p>
-                  )}
-                  <div className="mt-3">
-                    {renderNavigateButton(
-                      'Navigate to Restaurant',
-                      getRestaurantAddress(activeOrder),
-                      'inline-flex px-4 py-2 rounded-xl bg-[#2D3142] text-white font-semibold hover:bg-gray-800 transition'
-                    )}
-                  </div>
-                </div>
+              <div className="mt-4 space-y-3 text-sm text-gray-700">
+                <button
+                  type="button"
+                  onClick={() => toggleOrderSection(`active-${activeOrder.id}`, 'pickup')}
+                  className="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left"
+                >
+                  <span className="font-semibold text-[#2D3142]">Pickup Details</span>
+                  <span className="text-sm text-gray-500">
+                    {getOpenSection(`active-${activeOrder.id}`, 'pickup') === 'pickup' ? '▲' : '▼'}
+                  </span>
+                </button>
 
-                <div className="rounded-xl bg-white border border-gray-100 p-4">
-                  <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold">
-                    Dropoff
-                  </p>
-                  <p className="font-semibold text-[#2D3142] mt-1">
-                    {activeOrder.customerName || 'Customer'}
-                  </p>
-                  <p className="mt-1">{getCustomerAddress(activeOrder)}</p>
-                  {activeOrder.customerPhone && <p className="mt-1">📞 {activeOrder.customerPhone}</p>}
-                </div>
+                {getOpenSection(`active-${activeOrder.id}`, 'pickup') === 'pickup' && (
+                  <div className="rounded-xl bg-white border border-gray-100 p-4">
+                    <p className="font-semibold text-[#2D3142]">{activeOrder.restaurantName || 'Restaurant'}</p>
+                    <p className="mt-1">{getRestaurantAddress(activeOrder)}</p>
+                    {getRestaurantPhone(activeOrder) && <p className="mt-2">📞 {getRestaurantPhone(activeOrder)}</p>}
+                    <div className="mt-3">
+                      {renderNavigateButton(
+                        'Navigate to Restaurant',
+                        getRestaurantAddress(activeOrder),
+                        'inline-flex px-4 py-2 rounded-xl bg-[#2D3142] text-white font-semibold hover:bg-gray-800 transition'
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => toggleOrderSection(`active-${activeOrder.id}`, 'dropoff')}
+                  className="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left"
+                >
+                  <span className="font-semibold text-[#2D3142]">Dropoff Details</span>
+                  <span className="text-sm text-gray-500">
+                    {getOpenSection(`active-${activeOrder.id}`) === 'dropoff' ? '▲' : '▼'}
+                  </span>
+                </button>
+
+                {getOpenSection(`active-${activeOrder.id}`) === 'dropoff' && (
+                  <div className="rounded-xl bg-white border border-gray-100 p-4">
+                    <p className="font-semibold text-[#2D3142]">{activeOrder.customerName || 'Customer'}</p>
+                    <p className="mt-1">{getCustomerAddress(activeOrder)}</p>
+                    {activeOrder.customerPhone && <p className="mt-2">📞 {activeOrder.customerPhone}</p>}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => toggleOrderSection(`active-${activeOrder.id}`, 'items')}
+                  className="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left"
+                >
+                  <span className="font-semibold text-[#2D3142]">Order Items</span>
+                  <span className="text-sm text-gray-500">
+                    {getOpenSection(`active-${activeOrder.id}`) === 'items' ? '▲' : '▼'}
+                  </span>
+                </button>
+
+                {getOpenSection(`active-${activeOrder.id}`) === 'items' && (
+                  <div className="space-y-2 rounded-xl bg-white border border-gray-100 p-3">
+                    {(activeOrder.items ?? []).map((item, index) => (
+                      <div
+                        key={`${activeOrder.id}-${item.name ?? 'item'}-${index}`}
+                        className="flex items-center justify-between rounded-xl bg-white border border-gray-100 px-3 py-2"
+                      >
+                        <div>
+                          <p className="font-medium text-[#2D3142]">{item.quantity || 1}× {item.name || 'Item'}</p>
+                        </div>
+                        <p className="text-sm font-semibold text-[#FF6B35]">
+                          {formatCents(getItemPriceCents(item) * Math.max(1, Number(item.quantity ?? 1)))}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 space-y-2 text-sm text-gray-700">
-                <p>
-                  <span className="font-semibold text-[#2D3142]">Placed:</span>{' '}
-                  {formatDateTime(activeOrder.createdAt)}
-                </p>
+                <p><span className="font-semibold text-[#2D3142]">Placed:</span> {formatDateTime(activeOrder.createdAt)}</p>
                 {activeOrder.assignedAt && (
-                  <p>
-                    <span className="font-semibold text-[#2D3142]">Accepted:</span>{' '}
-                    {formatDateTime(activeOrder.assignedAt)}
-                  </p>
+                  <p><span className="font-semibold text-[#2D3142]">Accepted:</span> {formatDateTime(activeOrder.assignedAt)}</p>
                 )}
                 {activeOrder.pickedUpAt && (
-                  <p>
-                    <span className="font-semibold text-[#2D3142]">Picked Up:</span>{' '}
-                    {formatDateTime(activeOrder.pickedUpAt)}
-                  </p>
+                  <p><span className="font-semibold text-[#2D3142]">Picked Up:</span> {formatDateTime(activeOrder.pickedUpAt)}</p>
                 )}
                 {activeOrder.onTheWayAt && (
-                  <p>
-                    <span className="font-semibold text-[#2D3142]">On the Way:</span>{' '}
-                    {formatDateTime(activeOrder.onTheWayAt)}
-                  </p>
+                  <p><span className="font-semibold text-[#2D3142]">On the Way:</span> {formatDateTime(activeOrder.onTheWayAt)}</p>
                 )}
-              </div>
-
-              <div className="mt-4">
-                <p className="text-sm font-semibold text-[#2D3142] mb-2">Items</p>
-                <div className="space-y-2">
-                  {(activeOrder.items ?? []).map((item, index) => (
-                    <div
-                      key={`${activeOrder.id}-${item.name ?? 'item'}-${index}`}
-                      className="flex items-center justify-between rounded-xl bg-white border border-gray-100 px-3 py-2"
-                    >
-                      <div>
-                        <p className="font-medium text-[#2D3142]">
-                          {item.quantity || 1}× {item.name || 'Item'}
-                        </p>
-                      </div>
-                      <p className="text-sm font-semibold text-[#FF6B35]">
-                        {formatCents(
-                          getItemPriceCents(item) * Math.max(1, Number(item.quantity ?? 1))
-                        )}
-                      </p>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               <div className="mt-5 flex flex-wrap gap-3">
                 {activeOrder.status === 'ready' && (
                   <>
+                    {renderNavigateButton(
+                      'Navigate to Restaurant',
+                      getRestaurantAddress(activeOrder),
+                      'px-4 py-2 rounded-xl bg-[#2D3142] text-white font-semibold hover:bg-gray-800 transition'
+                    )}
                     <button
                       onClick={() => updateDriverOrderStatus(activeOrder.id, 'picked_up')}
                       disabled={statusActionOrderId === activeOrder.id}
@@ -1038,7 +1117,7 @@ const DriverDashboard = () => {
                 {activeOrder.status === 'on_the_way' && (
                   <>
                     {renderNavigateButton(
-                      'Open Customer Route',
+                      'Navigate to Crush',
                       getCustomerAddress(activeOrder),
                       'px-4 py-2 rounded-xl bg-[#2D3142] text-white font-semibold hover:bg-gray-800 transition'
                     )}
@@ -1056,9 +1135,7 @@ const DriverDashboard = () => {
           ) : (
             <div className="text-center py-12">
               <p className="text-gray-400 text-lg">No active crush assigned</p>
-              <p className="text-sm text-gray-400 mt-2">
-                Accept a ready order from the queue when you are online.
-              </p>
+              <p className="text-sm text-gray-400 mt-2">Accept a ready order from the queue when you are online.</p>
             </div>
           )}
         </div>
@@ -1074,18 +1151,14 @@ const DriverDashboard = () => {
           {!driverProfile.isAvailable ? (
             <div className="text-center py-12">
               <p className="text-gray-400 text-lg">You are offline</p>
-              <p className="text-sm text-gray-400 mt-2">
-                Go online to see available deliveries.
-              </p>
+              <p className="text-sm text-gray-400 mt-2">Go online to see available deliveries.</p>
             </div>
           ) : loading ? (
             <div className="text-center py-12 text-gray-400">Loading available crushes...</div>
           ) : availableOrders.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-400 text-lg">No crushes right now</p>
-              <p className="text-sm text-gray-400 mt-2">
-                Stay online — ready orders will appear here automatically.
-              </p>
+              <p className="text-sm text-gray-400 mt-2">Stay online — ready orders will appear here automatically.</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -1094,6 +1167,8 @@ const DriverDashboard = () => {
                   (sum, item) => sum + Math.max(1, Number(item.quantity ?? 1)),
                   0
                 );
+                const orderAccordionKey = `available-${order.id}`;
+                const openSection = getOpenSection(orderAccordionKey);
 
                 return (
                   <div
@@ -1102,21 +1177,8 @@ const DriverDashboard = () => {
                   >
                     <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                       <div>
-                        <p className="text-xl font-bold text-[#2D3142]">
-                          {order.restaurantName || 'Restaurant order'}
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Pickup: {getRestaurantAddress(order)}
-                        </p>
-                        <p className="text-sm text-gray-600 mt-2">
-                          Customer: {order.customerName || 'Customer'}
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">
-                          Dropoff: {getCustomerAddress(order)}
-                        </p>
-                        {order.customerPhone && (
-                          <p className="text-sm text-gray-500 mt-1">📞 {order.customerPhone}</p>
-                        )}
+                        <p className="text-xl font-bold text-[#2D3142]">{order.restaurantName || 'Restaurant order'}</p>
+                        <p className="text-sm text-gray-600 mt-2">Customer: {order.customerName || 'Customer'}</p>
                       </div>
 
                       <div className="w-full md:w-[240px] rounded-xl border border-emerald-200 bg-emerald-50 p-4">
@@ -1169,51 +1231,98 @@ const DriverDashboard = () => {
                       </span>
                     </div>
 
-                    <div className="mt-4 space-y-2">
-                      {(order.items ?? []).slice(0, 3).map((item, index) => (
-                        <div
-                          key={`${order.id}-${item.name ?? 'item'}-${index}`}
-                          className="flex items-center justify-between text-sm text-gray-700 bg-white rounded-xl px-3 py-2 border border-gray-100"
-                        >
-                          <span>
-                            {item.quantity || 1}× {item.name || 'Item'}
-                          </span>
-                          <span className="font-semibold text-[#2D3142]">
-                            {formatCents(
-                              getItemPriceCents(item) * Math.max(1, Number(item.quantity ?? 1))
-                            )}
-                          </span>
+                    <div className="mt-4 space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleOrderSection(orderAccordionKey, 'pickup')}
+                        className="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left"
+                      >
+                        <span className="font-semibold text-[#2D3142]">Pickup Details</span>
+                        <span className="text-sm text-gray-500">
+                          {openSection === 'pickup' ? '▲' : '▼'}
+                        </span>
+                      </button>
+
+                      {openSection === 'pickup' && (
+                        <div className="rounded-xl border border-gray-100 bg-white p-4 text-sm text-gray-700">
+                          <p className="font-semibold text-[#2D3142]">{order.restaurantName || 'Restaurant'}</p>
+                          <p className="mt-1">{getRestaurantAddress(order)}</p>
+                          {getRestaurantPhone(order) && <p className="mt-2">📞 {getRestaurantPhone(order)}</p>}
                         </div>
-                      ))}
-                      {(order.items ?? []).length > 3 && (
-                        <p className="text-xs text-gray-500 px-1">
-                          + {(order.items ?? []).length - 3} more item
-                          {(order.items ?? []).length - 3 === 1 ? '' : 's'}
-                        </p>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => toggleOrderSection(orderAccordionKey, 'dropoff')}
+                        className="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left"
+                      >
+                        <span className="font-semibold text-[#2D3142]">Dropoff Details</span>
+                        <span className="text-sm text-gray-500">
+                          {openSection === 'dropoff' ? '▲' : '▼'}
+                        </span>
+                      </button>
+
+                      {openSection === 'dropoff' && (
+                        <div className="rounded-xl border border-gray-100 bg-white p-4 text-sm text-gray-700">
+                          <p className="font-semibold text-[#2D3142]">{order.customerName || 'Customer'}</p>
+                          <p className="mt-1">{getCustomerAddress(order)}</p>
+                          {order.customerPhone && <p className="mt-2">📞 {order.customerPhone}</p>}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => toggleOrderSection(orderAccordionKey, 'items')}
+                        className="w-full flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-left"
+                      >
+                        <span className="font-semibold text-[#2D3142]">Order Items</span>
+                        <span className="text-sm text-gray-500">
+                          {openSection === 'items' ? '▲' : '▼'}
+                        </span>
+                      </button>
+
+                      {openSection === 'items' && (
+                        <div className="space-y-2 rounded-xl border border-gray-100 bg-white p-3">
+                          {(order.items ?? []).map((item, index) => (
+                            <div
+                              key={`${order.id}-${item.name ?? 'item'}-${index}`}
+                              className="flex items-center justify-between text-sm text-gray-700 rounded-xl px-3 py-2 border border-gray-100"
+                            >
+                              <span>{item.quantity || 1}× {item.name || 'Item'}</span>
+                              <span className="font-semibold text-[#2D3142]">
+                                {formatCents(getItemPriceCents(item) * Math.max(1, Number(item.quantity ?? 1)))}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
 
                     <div className="mt-5 flex flex-wrap justify-end gap-3">
-  <button
-    onClick={() => declineOrder(order.id)}
-    disabled={decliningOrderId === order.id}
-    className="px-5 py-2.5 rounded-xl border border-red-200 bg-white text-red-600 font-semibold hover:bg-red-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
-  >
-    {decliningOrderId === order.id ? 'Rejecting...' : 'Reject Order'}
-  </button>
-
-  <button
-    onClick={() => acceptOrder(order.id)}
-    disabled={claimingOrderId === order.id || !!activeOrder}
-    className="bg-[#FF6B35] text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
-  >
-    {claimingOrderId === order.id
-      ? 'Accepting...'
-      : activeOrder && activeOrder.id !== order.id
-        ? 'Finish current crush first'
-        : 'Accept Delivery'}
-  </button>
-</div>
+                      {renderNavigateButton(
+                        'Navigate to Restaurant',
+                        getRestaurantAddress(order),
+                        'px-5 py-2.5 rounded-xl border border-gray-200 text-[#2D3142] font-semibold hover:bg-white transition'
+                      )}
+                      <button
+                        onClick={() => declineOrder(order.id)}
+                        disabled={decliningOrderId === order.id}
+                        className="px-5 py-2.5 rounded-xl border border-red-200 text-red-600 font-semibold hover:bg-red-50 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {decliningOrderId === order.id ? 'Declining...' : 'Decline'}
+                      </button>
+                      <button
+                        onClick={() => acceptOrder(order.id)}
+                        disabled={claimingOrderId === order.id || !!activeOrder}
+                        className="bg-[#FF6B35] text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {claimingOrderId === order.id
+                          ? 'Accepting...'
+                          : activeOrder && activeOrder.id !== order.id
+                            ? 'Finish current crush first'
+                            : 'Accept Delivery'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -1235,9 +1344,7 @@ const DriverDashboard = () => {
         ) : historyOrders.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-gray-400 text-sm">No delivery history yet</p>
-            <p className="text-xs text-gray-400 mt-1">
-              Completed crushes will appear here.
-            </p>
+            <p className="text-xs text-gray-400 mt-1">Completed crushes will appear here.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -1247,25 +1354,15 @@ const DriverDashboard = () => {
                 className="rounded-xl border border-gray-100 p-4 flex flex-col md:flex-row md:justify-between md:items-center gap-3"
               >
                 <div>
-                  <p className="font-semibold text-[#2D3142]">
-                    {order.restaurantName || 'Restaurant order'}
-                  </p>
+                  <p className="font-semibold text-[#2D3142]">{order.restaurantName || 'Restaurant order'}</p>
                   <p className="text-sm text-gray-500">{order.customerName || 'Customer'}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {formatDateTime(order.deliveredAt || order.createdAt)}
-                  </p>
+                  <p className="text-xs text-gray-400 mt-1">{formatDateTime(order.deliveredAt || order.createdAt)}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span
-                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(
-                      order.status
-                    )}`}
-                  >
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(order.status)}`}>
                     {getStatusLabel(order.status)}
                   </span>
-                  <p className="font-bold text-[#FF6B35]">
-                    {formatCents(getDriverPayoutCents(order))}
-                  </p>
+                  <p className="font-bold text-[#FF6B35]">{formatCents(getOrderTotalCents(order))}</p>
                 </div>
               </div>
             ))}

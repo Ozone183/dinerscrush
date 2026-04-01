@@ -1,15 +1,18 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Logo from './Logo';
 
 const Navbar = () => {
   const { currentUser, userRole, logout } = useAuth();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
       await logout();
+      setMobileMenuOpen(false);
+      navigate('/', { replace: true });
     } catch (error) {
       console.error('Failed to logout', error);
     }
@@ -24,6 +27,14 @@ const Navbar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex space-x-6 items-center">
+            <Link
+              to="/corporate"
+              className="inline-flex items-center justify-center rounded-xl px-5 py-3 font-bold text-white"
+              style={{ backgroundColor: "#FF6B35" }}
+            >
+              Corporate
+            </Link>
+
             {currentUser ? (
               <>
                 <span className="text-sm text-[#4ECDC4]">
@@ -49,11 +60,12 @@ const Navbar = () => {
               </>
             ) : (
               <>
-                <Link to="/signin" className="hover:text-[#FF6B35] transition">Sign In</Link>
                 <Link to="/signup" className="bg-[#FF6B35] px-4 py-2 rounded-lg hover:bg-orange-600 transition">
                   Join the Crush
                 </Link>
+                <Link to="/signin" className="hover:text-[#4ECDC4] transition">Sign In</Link>
               </>
+
             )}
           </div>
 
@@ -78,6 +90,13 @@ const Navbar = () => {
         {mobileMenuOpen && (
           <div className="md:hidden fixed inset-0 top-16 bg-[#2D3142] z-50 overflow-y-auto">
             <div className="flex flex-col space-y-4 p-6">
+              <Link
+                to="/corporate"
+                className="bg-[#FF6B35] text-center text-white px-4 py-3 rounded-lg font-semibold hover:bg-orange-600 transition"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Corporate Lunch & Catering
+              </Link>
               {currentUser ? (
                 <>
                   <div className="text-[#4ECDC4] font-semibold border-b border-gray-700 pb-2 mb-2">
@@ -122,10 +141,7 @@ const Navbar = () => {
                     </Link>
                   )}
                   <button
-                    onClick={() => {
-                      handleLogout();
-                      setMobileMenuOpen(false);
-                    }}
+                    onClick={handleLogout}
                     className="text-left text-white text-lg py-2 hover:text-red-400 transition"
                   >
                     Sign Out
@@ -134,20 +150,21 @@ const Navbar = () => {
               ) : (
                 <>
                   <Link
-                    to="/signin"
-                    className="text-white text-lg py-2 hover:text-[#FF6B35] transition border-b border-gray-700"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    Sign In
-                  </Link>
-                  <Link
                     to="/signup"
                     className="bg-[#FF6B35] text-center text-white px-4 py-3 rounded-lg font-semibold hover:bg-orange-600 transition"
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     Join the Crush
                   </Link>
+                  <Link
+                    to="/signin"
+                    className="text-white text-lg py-2 hover:text-[#4ECDC4] transition border-b border-gray-700"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Sign In
+                  </Link>
                 </>
+
               )}
             </div>
           </div>
